@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.7.0";
+const VERSION="1.7.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -732,7 +732,7 @@ function vOzet(){
       const max=Math.floor((k.kira||0)*(1+L.tufe/100));
       const cls=r.gun<0?"bad":r.gun<=60?"warn":"mute";
       const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":r.gun<=60?`${r.gun} gün kaldı`:fmtShortDate(toISO(r.tarih));
-      return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm ${r.gun<=60?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div>`;
+      return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm" data-zmsg="${k.id}" aria-label="Zam bildirimi gönder" title="Zam bildirimi">${ic("wa")}</button><button class="btn sm ${r.gun<=60?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div>`;
     h+=`</section>`;
   }
 
@@ -792,6 +792,7 @@ function vOzet(){
   $("bLimit").onclick=openTufe;
   $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
   $("kMulk")&&($("kMulk").onclick=openMulkler);
+  $("view").querySelectorAll("[data-zmsg]").forEach(b=>b.onclick=e=>{e.stopPropagation();openZamMesaj(b.dataset.zmsg)});
   $("view").querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>{const k="o"+b.dataset.grp;ui[k]=!ui[k];const y=window.scrollY;render();window.scrollTo(0,y)});
   $("goT")&&($("goT").onclick=()=>{ui.tYM=curYM();go("tahsilat")});
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
@@ -959,7 +960,7 @@ function openDetail(id){
   detailClose=sheet(`
   <div style="display:flex;gap:12px;align-items:center"><span class="item" style="padding:0;width:auto"><span class="av ${b>0?"bad":""}" style="width:52px;height:52px;font-size:18px">${esc(initials(k.ad))}</span></span><div style="min-width:0;flex:1"><h3 style="overflow-wrap:anywhere">${esc(k.ad)}</h3><p class="sub" style="margin:2px 0 0">${esc(m?m.ad:"Mülk seçilmedi")}${isActive(k)?"":" · Çıktı"}</p></div></div>
   <div class="kpis"><div class="card kpi ${b>0?"bad":"ok"}"><b class="num">${TL.format(b)}</b><span>${b>0?"Gecikmiş borç":"Borcu yok"}</span></div><div class="card kpi"><b class="num">${TL.format(k.kira||0)}</b><span>Aylık kira · gün ${payDay(k)}</span></div></div>
-  ${!r&&nextRaise(k)?`<div class="banner info">${ic("up")}<span>Sonraki zam: ${esc(fmtDate(toISO(nextRaise(k).tarih)))} (${nextRaise(k).gun} gün). Şu anki sınırla en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-r>Hesapla</button></div>`:""}${r?`<div class="banner info">${ic("up")}<span>${r.gun<0?"Zam zamanı geldi":r.gun+" gün sonra yıldönümü"}. Sınır %${PCT.format(L.tufe)} → en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-r>Zam yap</button></div>`:""}
+  ${!r&&nextRaise(k)?`<div class="banner info">${ic("up")}<span>Sonraki zam: ${esc(fmtDate(toISO(nextRaise(k).tarih)))} (${nextRaise(k).gun} gün). Şu anki sınırla en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-zm>Bildir</button><button data-r>Hesapla</button></div>`:""}${r?`<div class="banner info">${ic("up")}<span>${r.gun<0?"Zam zamanı geldi":r.gun+" gün sonra yıldönümü"}. Sınır %${PCT.format(L.tufe)} → en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-zm>Bildir</button><button data-r>Zam yap</button></div>`:""}
   <div class="btns grow">${isActive(k)?`<button class="btn ok" id="dPay">${ic("wallet")}Tahsilat</button>`:""}${k.tel?`<a class="btn" href="tel:${esc(telLink(k.tel))}">${ic("phone")}Ara</a><button class="btn wa" id="dMsg">${ic("wa")}Mesaj</button>`:""}</div>
   ${ps.length?`<div class="sec"><div class="sechd"><h2>Ödemeler · son ${last.length} ay</h2></div><div class="grid12">${grid}</div><p class="hint">Bir aya dokunarak o ayın ödemesini gir. Yeşil ödendi, turuncu kısmi, kırmızı gecikmiş.</p></div>`:""}
   <div class="sec"><div class="sechd"><h2>Bilgiler</h2></div><dl class="kv card pad">
@@ -975,7 +976,7 @@ function openDetail(id){
   </dl></div>
   ${c&&(c.bes||c.on)?`<div class="banner warn">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span></div>`:""}
   ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${z.sure} yıl</b><small>${TL.format(z.kira)}/ay${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
-  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2></div><div class="card list">${hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
+  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2><button id="dZm">Zam bildirimi</button></div><div class="card list">${hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
   ${allPays.length?`<div class="sec"><div class="sechd"><h2>Tahsilatlar</h2></div><div class="card list">${allPays.slice(0,24).map(payRow).join("")}</div></div>`:""}
   <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dRaise">Zam yap</button><button class="btn" id="dSoz">Yeni sözleşme</button>`:`<button class="btn" id="dBack">Geri al</button>`}</div>
   <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:""}<button class="btn danger" id="dDel">Kiracıyı sil</button></div>`,(q,close,ov)=>{
@@ -984,6 +985,8 @@ function openDetail(id){
     q("#dPay")&&(q("#dPay").onclick=()=>openPay(k.id));
     q("#dMsg")&&(q("#dMsg").onclick=()=>openMessage(k.id));
     q("[data-r]")&&(q("[data-r]").onclick=()=>openRaise(k.id));
+    q("[data-zm]")&&(q("[data-zm]").onclick=()=>openZamMesaj(k.id));
+    q("#dZm")&&(q("#dZm").onclick=()=>openZamMesaj(k.id));
     q("#dRaise")&&(q("#dRaise").onclick=()=>openRaise(k.id));
     q("#dEdit").onclick=()=>openKiraci(k.id);
     sh.querySelectorAll(".grid12 button").forEach(b=>b.onclick=()=>openPay(k.id,b.dataset.ym));
@@ -1154,7 +1157,9 @@ function openRaise(id){
   <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih}"></div>
   <p class="err" id="zW"></p>
   <p class="hint">Konut ve iş yeri kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}. Yeni kira, bu tarihten sonraki ayların tahakkukunda kullanılır.</p>
-  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Uygula</button></div>`,(q,close)=>{
+  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Uygula</button></div>
+  <button class="btn ghost" id="zMsg">${ic("wa")}Kirayı değiştirmeden sadece bildirim gönder</button>`,(q,close)=>{
+    q("#zMsg").onclick=()=>{close();openZamMesaj(k.id,"once")};
     const m=mById(k.mulkId),konut=!m||m.tur!=="Arsa / diğer";
     const upd=(from)=>{
       let o=parseMoney(q("#zO").value),y=parseMoney(q("#zY").value);
@@ -1170,7 +1175,7 @@ function openRaise(id){
       const y=parseMoney(q("#zY").value),t=q("#zT").value;if(!(y>0)||!t)return;
       k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0});
       k.kira=y;save();close();render();refreshDetail(k.id);toast("Yeni kira "+TL.format(y));
-      openMessage(k.id,"zam");
+      openZamMesaj(k.id,"yapildi");
     };
   });
 }
@@ -1207,6 +1212,39 @@ function openSozlesme(id){
 }
 
 /* ---------- mesaj ---------- */
+/* ---------- zam bildirimi (ayrı ekran) ---------- */
+function openZamMesaj(id,mod){
+  const k=kById(id);if(!k)return;
+  const first=String(k.ad).split(" ")[0],L=limitNow();
+  const h=(k.gecmis||[]).slice().sort((a,b)=>b.tarih.localeCompare(a.tarih))[0];
+  const yeniVar=h&&daysBetween(parseISO(h.tarih),today())<=60;
+  const nr=nextRaise(k);
+  const iban=S.ayar.iban?`\nIBAN: ${S.ayar.iban}${S.ayar.ad?" ("+S.ayar.ad+")":""}`:"";
+  const sig=S.ayar.ad?`\n${S.ayar.ad}`:"";
+  let m=mod||(yeniVar?"yapildi":"once");
+  sheet(`<h3>Zam bildirimi</h3><p class="sub">${esc(k.ad)} · şu anki kira ${TL.format(k.kira||0)}</p>
+  <div class="seg"><button data-z="once">Önceden haber ver</button><button data-z="yapildi" ${h?"":"disabled"}>Zam yapıldı</button></div>
+  <div id="zOnce"><div class="g2"><div class="fld"><label for="zmT">Geçerlilik tarihi</label><input id="zmT" type="date" value="${nr?toISO(nr.tarih):todayISO()}"></div>
+  <div class="fld"><label for="zmY">Yeni aylık kira (₺)</label><input id="zmY" class="tl" inputmode="decimal" value="${esc(fmtInput(Math.floor((k.kira||0)*(1+L.tufe/100))))}"></div></div>
+  <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="zmL" checked style="width:18px;height:18px;accent-color:var(--brand)">Yasal sınırı (TÜFE %${PCT.format(L.tufe)}) mesajda belirt</label></div>
+  <div class="fld"><textarea id="mT" style="min-height:160px"></textarea></div>
+  <div class="btns grow"><button class="btn" id="mC">Kopyala</button><a class="btn wa" id="mW" target="_blank" rel="noopener">${ic("wa")}WhatsApp</a><a class="btn" id="mS">SMS</a></div>
+  <p class="hint">Mesaj sadece bilgilendirme içindir. Kirayı uygulamada değiştirmek için <b>Zam yap</b>'ı kullan.</p>`,(q,close,ov)=>{
+    const build=()=>{
+      if(m==="yapildi"&&h)return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${fmtDate(h.tarih)} itibarıyla başlıyor. %${PCT.format(h.oran)} artışla yeni aylık kira ${TL.format(h.yeni)} olacaktır.${iban}\nİyi günler.${sig}`;
+      const y=parseMoney(q("#zmY").value),e=+k.kira||0,t=q("#zmT").value;let o=e?(y/e-1)*100:0;if(Math.abs(y-Math.floor(e*(1+L.tufe/100)))<1)o=L.tufe;
+      return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${t?fmtDate(t):"yakında"} itibarıyla başlıyor. ${q("#zmL").checked?`Yasal sınır olan 12 aylık TÜFE ortalaması %${PCT.format(L.tufe)}. `:""}%${PCT.format(Math.round(o*100)/100)} artışla yeni aylık kira ${TL.format(y)} olacaktır.${iban}\nİyi günler.${sig}`;
+    };
+    const upd=()=>{const v=q("#mT").value;q("#mW").href=waLink(k.tel,v);q("#mS").href=`sms:${telLink(k.tel)}${/iPhone|iPad/.test(navigator.userAgent)?"&":"?"}body=${encodeURIComponent(v)}`};
+    const set=()=>{ov.querySelectorAll("[data-z]").forEach(b=>b.classList.toggle("on",b.dataset.z===m));q("#zOnce").hidden=m!=="once";q("#mT").value=build();upd()};
+    ov.querySelectorAll("[data-z]").forEach(b=>b.onclick=()=>{if(b.disabled)return;m=b.dataset.z;set()});
+    ["#zmT","#zmY","#zmL"].forEach(x=>q(x).addEventListener(x==="#zmL"?"change":"input",()=>{q("#mT").value=build();upd()}));
+    q("#mT").oninput=upd;
+    q("#mC").onclick=async()=>{try{await navigator.clipboard.writeText(q("#mT").value);toast("Kopyalandı")}catch(e){q("#mT").select();toast("Seçili metni kopyala")}};
+    if(!k.tel){q("#mW").removeAttribute("target")}
+    set();
+  });
+}
 function openMessage(id,start){
   const k=kById(id);if(!k)return;
   const first=String(k.ad).split(" ")[0],b=balance(k),late=lateMonths(k),L=limitNow();
@@ -1216,10 +1254,10 @@ function openMessage(id,start){
   const T={
     hat:{l:"Hatırlatma",t:`Merhaba ${first}, ${AYLAR[NOW.getMonth()]} ayı kira ödemesi (${TL.format(rentAt(k,curYM()))}) için hatırlatma yapmak istedim. Ödeme günü ayın ${payDay(k)}'i.${iban}\nİyi günler.${sig}`},
     gec:{l:"Gecikme",t:`Merhaba ${first}, ${late.length?late.map(ymLabel).join(", ")+" dönemine ait ":""}toplam ${TL.format(b)} kira ödemeniz gecikmiş görünüyor. En kısa sürede ödeme yapabilir veya bilgi verebilir misiniz?${iban}\nTeşekkürler.${sig}`},
-    zam:{l:"Zam bildirimi",t:h?`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${fmtDate(h.tarih)} itibarıyla başlıyor. %${PCT.format(h.oran)} artışla yeni aylık kira ${TL.format(h.yeni)} olacaktır.${iban}\nİyi günler.${sig}`:`Merhaba ${first}, kira sözleşmemizin yeni dönemi yaklaşıyor. Yasal sınır olan %${PCT.format(L.tufe)} oranında artışla yeni aylık kira ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))} olacaktır.${iban}\nİyi günler.${sig}`},
     tes:{l:"Teşekkür",t:`Merhaba ${first}, ${AYLAR[NOW.getMonth()]} kirası ulaştı, teşekkür ederim. İyi günler.${sig}`}
   };
   let cur=start&&T[start]?start:(b>0?"gec":"hat");
+  if(start==="zam"){openZamMesaj(id);return}
   sheet(`<h3>Mesaj gönder</h3><p class="sub">${esc(k.ad)} · ${esc(k.tel||"telefon yok")}</p><div class="chips" style="margin:0">${Object.entries(T).map(([key,v])=>`<button class="chip" data-m="${key}">${v.l}</button>`).join("")}</div><div class="fld"><textarea id="mT" style="min-height:150px"></textarea></div><div class="btns grow"><button class="btn" id="mC">Kopyala</button><a class="btn wa" id="mW" target="_blank" rel="noopener">${ic("wa")}WhatsApp</a><a class="btn" id="mS">SMS</a></div>`,(q)=>{
     const set=key=>{cur=key;q("#mT").value=T[key].t;q(".chips").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.m===key));upd()};
     const upd=()=>{const v=q("#mT").value;q("#mW").href=waLink(k.tel,v);q("#mS").href=`sms:${telLink(k.tel)}${/iPhone|iPad/.test(navigator.userAgent)?"&":"?"}body=${encodeURIComponent(v)}`};
