@@ -226,7 +226,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.1.0";
+const VERSION="1.2.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -364,6 +364,18 @@ function raiseInfo(k){
   if(done)return null;
   if(d<=45&&d>=-60)return{tarih:a,gun:d};
   return null;
+}
+function nextRaise(k){
+  /* bu yılki yıldönümü geçtiyse ve zam girilmediyse 60 güne kadar "gecikti" sayılır, yoksa bir sonraki yıldönümü */
+  const g=parseISO(k.giris);if(!g||!isActive(k))return null;
+  const y=NOW.getFullYear();let a=new Date(y,g.getMonth(),g.getDate());
+  const done=(k.gecmis||[]).some(h=>h.tarih.slice(0,4)===String(y));
+  const d=daysBetween(today(),a);
+  if(a.getFullYear()<=g.getFullYear())a=new Date(g.getFullYear()+1,g.getMonth(),g.getDate());
+  else if(d<0&&(done||d<-60))a=new Date(y+1,g.getMonth(),g.getDate());
+  else if(d>=0&&done)a=new Date(y+1,g.getMonth(),g.getDate());
+  const last=(k.gecmis||[]).slice().sort((x,z)=>z.tarih.localeCompare(x.tarih))[0];
+  return{tarih:a,gun:daysBetween(today(),a),last};
 }
 function contractInfo(k){
   const g=parseISO(k.giris);if(!g||!isActive(k))return null;
@@ -511,12 +523,21 @@ function vOzet(){
   else h+=`<div class="card list">${todo.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av ${x.cls==="info"?"":x.cls==="mute"?"":x.cls}">${x.a==="raise"?ic("up"):x.a==="open"?ic("doc"):initials(x.k.ad)}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="pay"?`<button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button>`:x.a==="raise"?`<button class="btn sm pri" data-raise="${x.k.id}">Zam</button>`:""}</span></div>`).join("")}</div>`;
   h+=`</section>`;
 
+  /* zam takvimi */
+  const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
+  if(zr.length)h+=`<section class="sec"><div class="sechd"><h2>Zam takvimi</h2><button id="bTufe2">Sınır %${PCT.format(L.tufe)}</button></div><div class="card list">${zr.map(({k,r})=>{
+    const max=Math.floor((k.kira||0)*(1+L.tufe/100));
+    const cls=r.gun<0?"bad":r.gun<=45?"warn":"mute";
+    const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":r.gun<=45?`${r.gun} gün kaldı`:fmtShortDate(toISO(r.tarih));
+    return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm ${r.gun<=45?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div></section>`;
+
   /* son hareketler */
   const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0)).slice(0,5);
   if(son.length)h+=`<section class="sec"><div class="sechd"><h2>Son tahsilatlar</h2><button id="allPay">Tümü</button></div><div class="card list">${son.map(payRow).join("")}</div></section>`;
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
+  $("bTufe2")&&($("bTufe2").onclick=openTufe);
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
   $("view").querySelectorAll("[data-renew]").forEach(b=>b.onclick=()=>openMulk(b.dataset.renew,null,b.dataset.f));
   $("view").querySelectorAll("[data-tax]").forEach(b=>b.onclick=()=>openGider(null,{tur:"Emlak vergisi",mulkId:b.dataset.tax}));
@@ -549,7 +570,7 @@ function vKiracilar(){
   else h+=`<div class="card list">${list.map(k=>{
     const b=balance(k),m=mById(k.mulkId),ps=isActive(k)?periodState(k,curYM()):null;
     let pill=!isActive(k)?`<span class="pill p-mute">Çıktı ${esc(fmtShortDate(k.cikis))}</span>`:b>0?`<span class="pill p-bad">${TL.format(b)} borç</span>`:ps&&ps.st==="paid"?`<span class="pill p-ok">Bu ay ödendi</span>`:`<span class="pill p-info">Ödeme günü ${payDay(k)}</span>`;
-    return`<button class="item" data-open="${k.id}"><span class="av ${b>0&&isActive(k)?"bad":""}">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc(m?m.ad:"Mülk seçilmedi")} · ${TL.format(k.kira||0)}/ay</small></span><span class="side">${pill}</span></button>`}).join("")}</div>`;
+    return`<button class="item" data-open="${k.id}"><span class="av ${b>0&&isActive(k)?"bad":""}">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc(m?m.ad:"Mülk seçilmedi")} · ${TL.format(k.kira||0)}/ay${(()=>{const r=nextRaise(k);return r?" · zam "+(r.gun<0?"gecikti":r.gun<=45?r.gun+" gün":fmtShortDate(toISO(r.tarih))):""})()}</small></span><span class="side">${pill}</span></button>`}).join("")}</div>`;
   /* mülkler */
   h+=`<section class="sec"><div class="sechd"><h2>Mülkler</h2><button id="addM">+ Mülk ekle</button></div>`;
   if(!S.mulkler.length)h+=`<div class="card empty" style="padding:18px">Daire, dükkân gibi mülklerini eklersen doluluk ve mülk bazında gelir-gider raporu görürsün.</div>`;
@@ -642,7 +663,7 @@ function openDetail(id){
   detailClose=sheet(`
   <div style="display:flex;gap:12px;align-items:center"><span class="item" style="padding:0;width:auto"><span class="av ${b>0?"bad":""}" style="width:52px;height:52px;font-size:18px">${esc(initials(k.ad))}</span></span><div style="min-width:0;flex:1"><h3 style="overflow-wrap:anywhere">${esc(k.ad)}</h3><p class="sub" style="margin:2px 0 0">${esc(m?m.ad:"Mülk seçilmedi")}${isActive(k)?"":" · Çıktı"}</p></div></div>
   <div class="kpis"><div class="card kpi ${b>0?"bad":"ok"}"><b class="num">${TL.format(b)}</b><span>${b>0?"Gecikmiş borç":"Borcu yok"}</span></div><div class="card kpi"><b class="num">${TL.format(k.kira||0)}</b><span>Aylık kira · gün ${payDay(k)}</span></div></div>
-  ${r?`<div class="banner info">${ic("up")}<span>${r.gun<0?"Zam zamanı geldi":r.gun+" gün sonra yıldönümü"}. Sınır %${PCT.format(L.tufe)} → en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-r>Zam yap</button></div>`:""}
+  ${!r&&nextRaise(k)?`<div class="banner info">${ic("up")}<span>Sonraki zam: ${esc(fmtDate(toISO(nextRaise(k).tarih)))} (${nextRaise(k).gun} gün). Şu anki sınırla en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-r>Hesapla</button></div>`:""}${r?`<div class="banner info">${ic("up")}<span>${r.gun<0?"Zam zamanı geldi":r.gun+" gün sonra yıldönümü"}. Sınır %${PCT.format(L.tufe)} → en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-r>Zam yap</button></div>`:""}
   <div class="btns grow">${isActive(k)?`<button class="btn ok" id="dPay">${ic("wallet")}Tahsilat</button>`:""}${k.tel?`<a class="btn" href="tel:${esc(telLink(k.tel))}">${ic("phone")}Ara</a><button class="btn wa" id="dMsg">${ic("wa")}Mesaj</button>`:""}</div>
   ${ps.length?`<div class="sec"><div class="sechd"><h2>Ödemeler · son ${last.length} ay</h2></div><div class="grid12">${grid}</div><p class="hint">Bir aya dokunarak o ayın ödemesini gir. Yeşil ödendi, turuncu kısmi, kırmızı gecikmiş.</p></div>`:""}
   <div class="sec"><div class="sechd"><h2>Bilgiler</h2></div><dl class="kv card pad">
@@ -750,9 +771,9 @@ function openRaise(id){
   <div class="calc"><span>Yeni aylık kira</span><b id="zR"></b></div>
   <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih}"></div>
   <p class="err" id="zW"></p>
-  <p class="hint">Konut kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}. Yeni kira, bu tarihten sonraki ayların tahakkukunda kullanılır.</p>
+  <p class="hint">Konut ve iş yeri kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}. Yeni kira, bu tarihten sonraki ayların tahakkukunda kullanılır.</p>
   <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Uygula</button></div>`,(q,close)=>{
-    const m=mById(k.mulkId),konut=!m||m.tur==="Konut";
+    const m=mById(k.mulkId),konut=!m||m.tur!=="Arsa / diğer";
     const upd=(from)=>{
       let o=parseMoney(q("#zO").value),y=parseMoney(q("#zY").value);
       if(from==="o"){y=Math.floor(eski*(1+o/100));q("#zY").value=fmtInput(y)}
