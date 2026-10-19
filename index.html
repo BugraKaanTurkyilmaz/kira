@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.6.1";
+const VERSION="1.7.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -581,14 +581,16 @@ function balance(k){
   return Math.max(0,Math.round(due-paid));
 }
 function lateMonths(k){return periods(k).filter(ym=>{const s=periodState(k,ym).st;return s==="late"||s==="partlate"})}
+/* güncel sözleşmenin başlangıcı: zam yıldönümü ve sözleşme süresi buna göre; kiracılık süresi (5/10 yıl) ilk girişe göre */
+const sozBas=k=>parseISO(k.sozBas)||parseISO(k.giris);
 function anniversary(k){
-  const g=parseISO(k.giris);if(!g)return null;
+  const g=sozBas(k);if(!g)return null;
   const y=NOW.getFullYear();let a=new Date(y,g.getMonth(),g.getDate());
   return a;
 }
 function raiseInfo(k){
   /* yıldönümüne 45 gün kala ya da geçtiyse bu yıl zam yapılmamışsa uyar */
-  const g=parseISO(k.giris);if(!g||!isActive(k))return null;
+  const g=sozBas(k);if(!g||!isActive(k))return null;
   const y=NOW.getFullYear();if(g.getFullYear()>=y)return null;
   const a=new Date(y,g.getMonth(),g.getDate());const d=daysBetween(today(),a);
   const done=(k.gecmis||[]).some(h=>h.tarih.slice(0,4)===String(y));
@@ -598,7 +600,7 @@ function raiseInfo(k){
 }
 function nextRaise(k){
   /* bu yılki yıldönümü geçtiyse ve zam girilmediyse 60 güne kadar "gecikti" sayılır, yoksa bir sonraki yıldönümü */
-  const g=parseISO(k.giris);if(!g||!isActive(k))return null;
+  const g=sozBas(k);if(!g||!isActive(k))return null;
   const y=NOW.getFullYear();let a=new Date(y,g.getMonth(),g.getDate());
   const done=(k.gecmis||[]).some(h=>h.tarih.slice(0,4)===String(y));
   const d=daysBetween(today(),a);
@@ -609,11 +611,11 @@ function nextRaise(k){
   return{tarih:a,gun:daysBetween(today(),a),last};
 }
 function contractInfo(k){
-  const g=parseISO(k.giris);if(!g||!isActive(k))return null;
+  const g=sozBas(k),ilk=parseISO(k.giris)||g;if(!g||!isActive(k))return null;
   const sure=Math.max(1,+k.sure||1);
   const ilkBitis=new Date(g.getFullYear()+sure,g.getMonth(),g.getDate());
   let bitis=ilkBitis;while(bitis<today())bitis=new Date(bitis.getFullYear()+1,bitis.getMonth(),bitis.getDate());
-  const yil=(today()-g)/(365.25*864e5);
+  const yil=(today()-ilk)/(365.25*864e5);
   return{bitis,gun:daysBetween(today(),bitis),yil,uzama:bitis>ilkBitis,on:yil>=10,bes:yil>=5};
 }
 function monthTotals(ym){
@@ -816,15 +818,15 @@ function bindCommon(){
 function vKiracilar(){
   const q=ui.kQ.toLocaleLowerCase("tr");
   let list=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
-  if(ui.kAy>=0)list=list.filter(k=>{const d=parseISO(k.giris);return d&&d.getMonth()===ui.kAy});
+  if(ui.kAy>=0)list=list.filter(k=>{const d=sozBas(k);return d&&d.getMonth()===ui.kAy});
   if(ui.kM)list=list.filter(k=>ui.kM==="__yok"?!k.mulkId:k.mulkId===ui.kM);
   if(q)list=list.filter(k=>(k.ad+" "+(mById(k.mulkId)?.ad||"")+" "+(k.tel||"")).toLocaleLowerCase("tr").includes(q));
   list.sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   const n={aktif:S.kiracilar.filter(isActive).length,borclu:S.kiracilar.filter(k=>isActive(k)&&balance(k)>0).length,eski:S.kiracilar.filter(k=>!isActive(k)).length};
   let h=`<div class="seg" role="tablist">${[["aktif","Aktif"],["borclu","Borçlu"],["eski","Çıkanlar"]].map(([k,l])=>`<button data-f="${k}" class="${ui.kFilter===k?"on":""}">${l} <span class="num" style="opacity:.6">${n[k]}</span></button>`).join("")}</div>`;
   {const base=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
-   const cnt=Array(12).fill(0);base.forEach(k=>{const d=parseISO(k.giris);if(d)cnt[d.getMonth()]++});
-   h+=`<div class="sechd" style="margin-bottom:-6px"><h2>Zam ayı (giriş ayı)</h2>${ui.kAy>=0?`<button data-ay="-1">Temizle</button>`:""}</div><div class="chips"><button class="chip ${ui.kAy<0?"on":""}" data-ay="-1">Tüm aylar</button>${AYK.map((a,i)=>`<button class="chip ${ui.kAy===i?"on":""}" data-ay="${i}" ${cnt[i]?"":'style="opacity:.45"'}>${a}${cnt[i]?` <span class="num" style="opacity:.6">${cnt[i]}</span>`:""}</button>`).join("")}</div>`;}
+   const cnt=Array(12).fill(0);base.forEach(k=>{const d=sozBas(k);if(d)cnt[d.getMonth()]++});
+   h+=`<div class="sechd" style="margin-bottom:-6px"><h2>Zam ayı</h2>${ui.kAy>=0?`<button data-ay="-1">Temizle</button>`:""}</div><div class="chips"><button class="chip ${ui.kAy<0?"on":""}" data-ay="-1">Tüm aylar</button>${AYK.map((a,i)=>`<button class="chip ${ui.kAy===i?"on":""}" data-ay="${i}" ${cnt[i]?"":'style="opacity:.45"'}>${a}${cnt[i]?` <span class="num" style="opacity:.6">${cnt[i]}</span>`:""}</button>`).join("")}</div>`;}
   if(S.mulkler.length)h+=`<div class="fld"><select id="kM" aria-label="Mülk filtresi"><option value="">Tüm mülkler</option>${opt(S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>[m.id,m.ad]),ui.kM||"")}<option value="__yok"${ui.kM==="__yok"?" selected":""}>Mülk seçilmemiş</option></select></div>`;
   h+=`<input class="search" id="kq" type="search" placeholder="İsim, mülk veya telefon ara" value="${esc(ui.kQ)}">`;
   if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?(ui.kAy>=0?`${AYLAR[ui.kAy]} ayında zammı olan kiracı yok.`:"Arama veya filtreyi değiştir."):"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
@@ -858,6 +860,7 @@ function openKiraci(id){
   <div class="fld"><label for="fMulk">Mülk</label><select id="fMulk"><option value="">Seçilmedi</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),d.mulkId||"")}<option value="__new">+ Yeni mülk ekle…</option></select></div>
   <div class="g2"><div class="fld"><label for="fGiris">Giriş tarihi</label><input id="fGiris" type="date" value="${esc(d.giris||todayISO())}"></div>
   <div class="fld"><label for="fSure">Sözleşme süresi</label><select id="fSure">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(d.sure||1))}</select></div></div>
+  <div class="fld"><label for="fSoz">Güncel sözleşme başlangıcı</label><input id="fSoz" type="date" value="${esc(d.sozBas||d.giris||"")}"><p class="hint" style="margin-top:2px">Sözleşmeyi sonradan yenilediyseniz yeni sözleşmenin tarihini yaz. Zamlar bu tarihe göre hesaplanır; değilse giriş tarihiyle aynı bırak.</p></div>
   <div class="g2"><div class="fld"><label for="fKira">Aylık kira (₺)</label><input id="fKira" class="tl" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
   <div class="fld"><label for="fGun">Ödeme günü</label><input id="fGun" inputmode="numeric" value="${esc(d.odemeGunu||"")}" placeholder="Giriş günü"></div></div>
   <div class="g2"><div class="fld"><label for="fDep">Depozito (₺)</label><input id="fDep" class="tl" inputmode="decimal" value="${esc(fmtInput(d.depozito))}"></div>
@@ -874,7 +877,8 @@ function openKiraci(id){
       if(!(kira>0)){q("#fErr").textContent="Aylık kirayı yaz.";return}
       const gun=parseInt(q("#fGun").value,10);
       const mulk=q("#fMulk").value==="__new"?"":q("#fMulk").value;
-      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO()}),ad,tel:q("#fTel").value.trim(),tc:q("#fTc").value.trim(),mulkId:mulk,giris,sure:+q("#fSure").value,kira,odemeGunu:gun>=1&&gun<=31?gun:"",depozito:parseMoney(q("#fDep").value)||"",takipBas:q("#fTakip").value||curYM(),not:q("#fNot").value.trim()};
+      const sbv=q("#fSoz")?q("#fSoz").value:"";
+      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO()}),...(sbv&&sbv!==giris?{sozBas:sbv}:{sozBas:""}),ad,tel:q("#fTel").value.trim(),tc:q("#fTc").value.trim(),mulkId:mulk,giris,sure:+q("#fSure").value,kira,odemeGunu:gun>=1&&gun<=31?gun:"",depozito:parseMoney(q("#fDep").value)||"",takipBas:q("#fTakip").value||curYM(),not:q("#fNot").value.trim()};
       if(k)Object.assign(k,rec);else S.kiracilar.push(rec);
       save();close();render();toast(k?"Güncellendi":"Kiracı eklendi");
       if(k)refreshDetail(k.id);
@@ -961,18 +965,21 @@ function openDetail(id){
   <div class="sec"><div class="sechd"><h2>Bilgiler</h2></div><dl class="kv card pad">
     <dt>Telefon</dt><dd>${esc(k.tel||"—")}</dd>
     ${k.tc?`<dt>TC no</dt><dd>${esc(k.tc)}</dd>`:""}
-    <dt>Giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
-    ${c?`<dt>Sözleşme</dt><dd>${esc(fmtDate(toISO(c.bitis)))} ${c.uzama?"(uzadı)":""}</dd><dt>Süre</dt><dd>${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
+    <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
+    ${k.sozBas&&k.sozBas!==k.giris?`<dt>Güncel sözleşme</dt><dd>${esc(fmtDate(k.sozBas))} · ${+k.sure||1} yıl</dd>`:""}
+    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))} ${c.uzama?"(kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
     <dt>Depozito</dt><dd>${k.depozito?TL.format(k.depozito):"—"}</dd>
     <dt>Toplam tahsilat</dt><dd>${TL.format(allPays.reduce((s,o)=>s+(+o.tutar||0),0))}</dd>
     ${k.not?`<dt>Not</dt><dd style="text-align:left;grid-column:1/-1;white-space:pre-wrap">${esc(k.not)}</dd>`:""}
   </dl></div>
   ${c&&(c.bes||c.on)?`<div class="banner warn">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span></div>`:""}
-  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2></div><div class="card list">${hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
+  ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${z.sure} yıl</b><small>${TL.format(z.kira)}/ay${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
+  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2></div><div class="card list">${hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
   ${allPays.length?`<div class="sec"><div class="sechd"><h2>Tahsilatlar</h2></div><div class="card list">${allPays.slice(0,24).map(payRow).join("")}</div></div>`:""}
-  <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dRaise">Zam yap</button><button class="btn" id="dOut">Çıkış</button>`:`<button class="btn" id="dBack">Geri al</button>`}</div>
-  <button class="btn danger" id="dDel">Kiracıyı sil</button>`,(q,close,ov)=>{
+  <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dRaise">Zam yap</button><button class="btn" id="dSoz">Yeni sözleşme</button>`:`<button class="btn" id="dBack">Geri al</button>`}</div>
+  <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:""}<button class="btn danger" id="dDel">Kiracıyı sil</button></div>`,(q,close,ov)=>{
+    q("#dSoz")&&(q("#dSoz").onclick=()=>openSozlesme(k.id));
     const sh=ov.querySelector(".sheet");
     q("#dPay")&&(q("#dPay").onclick=()=>openPay(k.id));
     q("#dMsg")&&(q("#dMsg").onclick=()=>openMessage(k.id));
@@ -1137,7 +1144,7 @@ function openReceipt(oid){
 /* ---------- zam ---------- */
 function openRaise(id){
   const k=kById(id);if(!k)return;const L=limitNow(),eski=+k.kira||0;
-  const g=parseISO(k.giris);let tarih=todayISO();
+  const g=sozBas(k);let tarih=todayISO();
   if(g){const a=new Date(NOW.getFullYear(),g.getMonth(),g.getDate());if(daysBetween(today(),a)<=45&&daysBetween(today(),a)>=-300)tarih=toISO(a)}
   sheet(`<h3>Kira artışı</h3><p class="sub">${esc(k.ad)} · şu anki kira ${TL.format(eski)}</p>
   <div class="quick"><button class="hl" data-p="${L.tufe}">%${PCT.format(L.tufe)} TÜFE</button>${[10,20,25,30].map(p=>`<button data-p="${p}">%${p}</button>`).join("")}</div>
@@ -1164,6 +1171,37 @@ function openRaise(id){
       k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0});
       k.kira=y;save();close();render();refreshDetail(k.id);toast("Yeni kira "+TL.format(y));
       openMessage(k.id,"zam");
+    };
+  });
+}
+
+/* ---------- yeni sözleşme ---------- */
+function openSozlesme(id){
+  const k=kById(id);if(!k)return;
+  const eski=+k.kira||0,L=limitNow();
+  sheet(`<h3>Yeni sözleşme</h3><p class="sub">${esc(k.ad)} · ilk giriş ${esc(fmtDate(k.giris))}</p>
+  <div class="g2"><div class="fld"><label for="sB">Yeni sözleşme başlangıcı</label><input id="sB" type="date" value="${todayISO()}"></div>
+  <div class="fld"><label for="sS">Süre</label><select id="sS">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(k.sure||1))}</select></div></div>
+  <div class="g2"><div class="fld"><label for="sK">Yeni aylık kira (₺)</label><input id="sK" class="tl" inputmode="decimal" value="${esc(fmtInput(eski))}"></div>
+  <div class="fld"><label for="sG">Ödeme günü</label><input id="sG" inputmode="numeric" value="${esc(k.odemeGunu||"")}" placeholder="Değişmedi"></div></div>
+  <div class="fld"><label for="sD">Depozito (₺)</label><input id="sD" class="tl" inputmode="decimal" value="${esc(fmtInput(k.depozito))}"></div>
+  <div class="fld"><label for="sN">Not</label><input id="sN" placeholder="Örn. noterde yenilendi"></div>
+  <p class="hint" id="sInfo"></p>
+  <p class="hint">Zam yıldönümü ve sözleşme bitişi artık bu tarihe göre hesaplanır. Kiracılık süresi (5 ve 10 yıl hakları) ilk giriş tarihinden saymaya devam eder. Eski ödeme ve zam kayıtları korunur.</p>
+  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="sOk">Kaydet</button></div>`,(q,close)=>{
+    const m=mById(k.mulkId),sinirli=!m||m.tur!=="Arsa / diğer";
+    const info=()=>{const y=parseMoney(q("#sK").value),o=eski?(y/eski-1)*100:0;q("#sInfo").innerHTML=y&&y!==eski?`Kira ${TL.format(eski)} → <b>${TL.format(y)}</b> (%${PCT.format(o)})${sinirli&&o>L.tufe+0.005?` <span style="color:var(--bad)">· Yasal sınır %${PCT.format(L.tufe)}. Aynı kiracıyla yapılan yeni sözleşmede de bu sınır geçerli sayılabilir.</span>`:""}`:"Kira değişmiyor."};
+    q("#sK").addEventListener("input",info);info();
+    q("#sOk").onclick=()=>{
+      const t=q("#sB").value,y=parseMoney(q("#sK").value),sure=+q("#sS").value;if(!t||!(y>0))return;
+      k.sozlesmeler=k.sozlesmeler||[];
+      if(!k.sozlesmeler.length)k.sozlesmeler.push({tarih:k.sozBas||k.giris,sure:+k.sure||1,kira:(k.gecmis||[]).length?+(k.gecmis.slice().sort((a,b)=>a.tarih.localeCompare(b.tarih))[0].eski):eski,not:"İlk sözleşme"});
+      k.sozlesmeler.push({tarih:t,sure,kira:y,not:q("#sN").value.trim()});
+      if(y!==eski){k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0,tur:"sozlesme"});k.kira=y}
+      k.sozBas=t;k.sure=sure;
+      const g=parseInt(q("#sG").value,10);if(g>=1&&g<=31)k.odemeGunu=g;
+      const dep=parseMoney(q("#sD").value);k.depozito=dep||"";
+      save();close();render();refreshDetail(k.id);toast("Yeni sözleşme kaydedildi");
     };
   });
 }
@@ -1414,8 +1452,8 @@ async function saveXlsx(name,sheets){
 }
 function exportExcel(yil){
   const mAd=id=>mById(id)?.ad||"";
-  const k=[["Ad Soyad","Telefon","TC","Mülk","Giriş Tarihi","Sözleşme (yıl)","Aylık Kira","Ödeme Günü","Depozito","Durum","Çıkış","Gecikmiş Borç","Not"]];
-  S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>k.push([x.ad,x.tel||"",x.tc||"",mAd(x.mulkId),trDate(x.giris),+x.sure||1,+x.kira||0,payDay(x),+x.depozito||"",isActive(x)?"Aktif":"Çıktı",trDate(x.cikis),balance(x),x.not||""]));
+  const k=[["Ad Soyad","Telefon","TC","Mülk","Giriş Tarihi","Güncel Sözleşme","Sözleşme (yıl)","Aylık Kira","Ödeme Günü","Depozito","Durum","Çıkış","Gecikmiş Borç","Not"]];
+  S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>k.push([x.ad,x.tel||"",x.tc||"",mAd(x.mulkId),trDate(x.giris),trDate(x.sozBas||x.giris),+x.sure||1,+x.kira||0,payDay(x),+x.depozito||"",isActive(x)?"Aktif":"Çıktı",trDate(x.cikis),balance(x),x.not||""]));
   const t=[["Makbuz No","Ödeme Tarihi","Kiracı","Mülk","Dönem","Tutar","Yöntem","Not"]];
   S.odemeler.filter(o=>o.tarih.startsWith(yil)).sort((a,b)=>a.tarih.localeCompare(b.tarih)).forEach(o=>{const x=kById(o.kiraciId);t.push([o.no||"",trDate(o.tarih),x?x.ad:"",x?mAd(x.mulkId):"",ymLabel(o.donem),+o.tutar,o.yontem||"",o.not||""])});
   const g=[["Tarih","Tür","Mülk","Açıklama","Tutar"]];
