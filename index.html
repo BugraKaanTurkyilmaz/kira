@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.5.1";
+const VERSION="1.5.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -764,9 +764,9 @@ function vOzet(){
     h+=`</section>`;
   }
 
-  /* son hareketler: kısa */
-  const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0)).slice(0,3);
-  if(son.length)h+=`<section class="sec"><div class="sechd"><h2>Son tahsilatlar</h2><button id="allPay">Tümü</button></div><div class="card list">${son.map(o=>{const k=kById(o.kiraciId);return`<button class="item" data-rcpt="${o.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k?k.ad:"Silinmiş kiracı")}</b><small>${esc(fmtShortDate(o.tarih))} · ${esc(ymShort(o.donem))}</small></span><span class="side"><b>${TL.format(o.tutar)}</b></span></button>`}).join("")}</div></section>`;
+  /* son tahsilat: tek satır; tamamı Tahsilat sekmesinde */
+  const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0))[0];
+  if(son){const k=kById(son.kiraciId);h+=`<button class="card item" id="allPay" style="padding:12px 14px;background:var(--surface)"><span class="av ok">${ic("check",2)}</span><span class="main"><b style="font-weight:500">Son tahsilat: ${esc(k?k.ad:"—")}</b><small>${esc(fmtShortDate(son.tarih))} · ${TL.format(son.tutar)}</small></span><span class="side"><small style="color:var(--brand);font-weight:600">Tümü</small></span>${ic("right")}</button>`}
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
