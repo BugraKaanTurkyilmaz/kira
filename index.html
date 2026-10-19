@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.6.0";
+const VERSION="1.6.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -283,7 +283,25 @@ function parseMoney(v){
   else if(/\.\d{3}(\.|$)/.test(s))s=s.replace(/\./g,"");
   return parseFloat(s)||0;
 }
-const fmtInput=n=>n?String(n).replace(".",","):"";
+const NF2=new Intl.NumberFormat("tr-TR",{maximumFractionDigits:2});
+const fmtInput=n=>n||n===0&&n!==""?(+n?NF2.format(+n):""):"";
+/* yazarken binlik nokta ekle: 20000 -> 20.000; virgülden sonrası kuruş */
+function fmtTyping(v){
+  v=String(v).replace(/[^\d,]/g,"");
+  const i=v.indexOf(",");let a=i<0?v:v.slice(0,i),b=i<0?null:v.slice(i+1).replace(/,/g,"").slice(0,2);
+  a=a.replace(/^0+(?=\d)/,"");
+  a=a.replace(/\B(?=(\d{3})+(?!\d))/g,".");
+  return b===null?a:a+","+b;
+}
+document.addEventListener("input",e=>{
+  const el=e.target;if(!el.classList||!el.classList.contains("tl"))return;
+  const old=el.value,pos=el.selectionStart??old.length;
+  const digitsBefore=old.slice(0,pos).replace(/[^\d,]/g,"").length;
+  const nv=fmtTyping(old);if(nv===old)return;
+  el.value=nv;
+  let c=0,n=0;while(c<nv.length&&n<digitsBefore){if(/[\d,]/.test(nv[c]))n++;c++}
+  try{el.setSelectionRange(c,c)}catch(x){}
+},true);
 
 /* ================== veri ================== */
 function blank(){return{v:1,ayar:{ad:"",tel:"",iban:"",pinHash:"",tufe:null,sonYedek:"",tema:"auto"},tufeOto:null,mulkler:[],kiracilar:[],odemeler:[],giderler:[]}}
@@ -840,9 +858,9 @@ function openKiraci(id){
   <div class="fld"><label for="fMulk">Mülk</label><select id="fMulk"><option value="">Seçilmedi</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),d.mulkId||"")}<option value="__new">+ Yeni mülk ekle…</option></select></div>
   <div class="g2"><div class="fld"><label for="fGiris">Giriş tarihi</label><input id="fGiris" type="date" value="${esc(d.giris||todayISO())}"></div>
   <div class="fld"><label for="fSure">Sözleşme süresi</label><select id="fSure">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(d.sure||1))}</select></div></div>
-  <div class="g2"><div class="fld"><label for="fKira">Aylık kira (₺)</label><input id="fKira" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
+  <div class="g2"><div class="fld"><label for="fKira">Aylık kira (₺)</label><input id="fKira" class="tl" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
   <div class="fld"><label for="fGun">Ödeme günü</label><input id="fGun" inputmode="numeric" value="${esc(d.odemeGunu||"")}" placeholder="Giriş günü"></div></div>
-  <div class="g2"><div class="fld"><label for="fDep">Depozito (₺)</label><input id="fDep" inputmode="decimal" value="${esc(fmtInput(d.depozito))}"></div>
+  <div class="g2"><div class="fld"><label for="fDep">Depozito (₺)</label><input id="fDep" class="tl" inputmode="decimal" value="${esc(fmtInput(d.depozito))}"></div>
   <div class="fld"><label for="fTakip">Ödeme takibi başlangıcı</label><input id="fTakip" type="month" value="${esc(d.takipBas||curYM())}"></div></div>
   <p class="hint">Takip başlangıcından önceki aylar borç olarak sayılmaz. Eski bir kiracıyı ekliyorsan bu ayı bırak.</p>
   <div class="fld"><label for="fNot">Not</label><textarea id="fNot">${esc(d.not)}</textarea></div>
@@ -898,7 +916,7 @@ function openMulk(id,onCreated,focusField){
   sheet(`<h3>${m?"Mülk":"Yeni mülk"}</h3>
   <div class="fld"><label for="mAd">Mülk adı</label><input id="mAd" value="${esc(d.ad)}" placeholder="Örn. Çankaya 3+1, Daire 5"></div>
   <div class="g2"><div class="fld"><label for="mTur">Tür</label><select id="mTur">${opt(["Konut","İş yeri","Arsa / diğer"],d.tur||"Konut")}</select></div>
-  <div class="fld"><label for="mAidat">Aylık aidat (₺)</label><input id="mAidat" inputmode="decimal" value="${esc(fmtInput(d.aidat))}"></div></div>
+  <div class="fld"><label for="mAidat">Aylık aidat (₺)</label><input id="mAidat" class="tl" inputmode="decimal" value="${esc(fmtInput(d.aidat))}"></div></div>
   <div class="fld"><label for="mAdres">Adres</label><textarea id="mAdres">${esc(d.adres)}</textarea></div>
   <div class="g2"><div class="fld"><label for="mTapu">Ada / parsel</label><input id="mTapu" value="${esc(d.tapu)}"></div>
   <div class="fld"><label for="mDask">DASK bitişi</label><input id="mDask" type="date" value="${esc(d.dask)}"></div></div>
@@ -983,7 +1001,7 @@ function openPay(kid,ym){
   sheet(`<h3>Tahsilat</h3>
   <div class="fld"><label for="pK">Kiracı</label><select id="pK">${opt(S.kiracilar.filter(x=>isActive(x)||x.id===kid).sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(x=>[x.id,x.ad]),k.id)}</select></div>
   <div class="g2"><div class="fld"><label for="pD">Hangi ayın kirası</label><input id="pD" type="month"></div>
-  <div class="fld"><label for="pT">Tutar (₺)</label><input id="pT" inputmode="decimal"></div></div>
+  <div class="fld"><label for="pT">Tutar (₺)</label><input id="pT" class="tl" inputmode="decimal"></div></div>
   <p class="hint" id="pInfo"></p>
   <label class="banner info" id="pAllW" style="cursor:pointer" hidden><input type="checkbox" id="pAll" style="width:20px;height:20px;accent-color:var(--brand)"><span id="pAllT"></span></label>
   <div class="g2"><div class="fld"><label for="pTar">Ödeme tarihi</label><input id="pTar" type="date" value="${todayISO()}"></div>
@@ -1124,7 +1142,7 @@ function openRaise(id){
   sheet(`<h3>Kira artışı</h3><p class="sub">${esc(k.ad)} · şu anki kira ${TL.format(eski)}</p>
   <div class="quick"><button class="hl" data-p="${L.tufe}">%${PCT.format(L.tufe)} TÜFE</button>${[10,20,25,30].map(p=>`<button data-p="${p}">%${p}</button>`).join("")}</div>
   <div class="g2"><div class="fld"><label for="zO">Oran (%)</label><input id="zO" inputmode="decimal" value="${fmtInput(L.tufe)}"></div>
-  <div class="fld"><label for="zY">Yeni kira (₺)</label><input id="zY" inputmode="decimal"></div></div>
+  <div class="fld"><label for="zY">Yeni kira (₺)</label><input id="zY" class="tl" inputmode="decimal"></div></div>
   <div class="calc"><span>Yeni aylık kira</span><b id="zR"></b></div>
   <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih}"></div>
   <p class="err" id="zW"></p>
@@ -1227,7 +1245,7 @@ function openGider(id,preset){
   const g=id?S.giderler.find(x=>x.id===id):null,d=g||preset||{};
   sheet(`<h3>${g?"Gideri düzenle":"Yeni gider"}</h3>
   <div class="g2"><div class="fld"><label for="gT">Tür</label><select id="gT">${opt(GIDER_TUR,d.tur||"Aidat")}</select></div>
-  <div class="fld"><label for="gTu">Tutar (₺)</label><input id="gTu" inputmode="decimal" value="${esc(fmtInput(d.tutar))}"></div></div>
+  <div class="fld"><label for="gTu">Tutar (₺)</label><input id="gTu" class="tl" inputmode="decimal" value="${esc(fmtInput(d.tutar))}"></div></div>
   <div class="g2"><div class="fld"><label for="gD">Tarih</label><input id="gD" type="date" value="${esc(d.tarih||todayISO())}"></div>
   <div class="fld"><label for="gMl">Mülk</label><select id="gMl"><option value="">Genel</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),d.mulkId||ui.gMulk||"")}</select></div></div>
   <div class="fld"><label for="gA">Açıklama</label><input id="gA" value="${esc(d.aciklama)}" placeholder="Örn. kombi bakımı"></div>
