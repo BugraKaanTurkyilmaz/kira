@@ -2,6 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kira Defteri</title>
 <meta name="description" content="Kiracı, tahsilat, gider ve kira artışı takibi">
@@ -233,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.4.1";
+const VERSION="1.5.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -309,7 +311,7 @@ const FIREBASE_CONFIG={
 };
 const COLS=["mulkler","kiracilar","odemeler","giderler"];
 const SYNC_AYAR=["ad","tel","iban","tufe","tema"];
-const CLOUD={on:false,api:null,user:null,ready:false,last:{},pending:false,err:"",unsubs:[],seen:{}};
+const CLOUD={on:false,api:null,user:null,ready:false,last:{},pending:false,err:"",unsubs:[],needVerify:false,denied:false};
 function cloudMap(){
   const m={};
   for(const c of COLS)for(const r of S[c])if(r&&r.id)m[c+"/"+r.id]=JSON.stringify(r);
@@ -349,10 +351,14 @@ async function cloudStart(){
   if(!FIREBASE_CONFIG&&!fake)return;
   CLOUD.on=true;
   try{CLOUD.api=fake||await fbAdapter(FIREBASE_CONFIG)}catch(e){CLOUD.on=false;CLOUD.err="Bulut yüklenemedi (internet?)";cloudBadge();return}
-  CLOUD.api.onAuth(async u=>{
+  CLOUD.api.onAuth(cloudOnUser);
+}
+async function cloudOnUser(u){
     CLOUD.unsubs.forEach(f=>{try{f()}catch(e){}});CLOUD.unsubs=[];CLOUD.ready=false;
-    CLOUD.user=u||null;cloudBadge();
+    CLOUD.user=u||null;CLOUD.err="";CLOUD.needVerify=false;CLOUD.denied=false;cloudBadge();
     if(!u){render();return}
+    /* e-postası doğrulanmamış hesap buluta erişemez (başkasının adresiyle hesap açılmasını önler) */
+    if(u.emailVerified===false){CLOUD.needVerify=true;cloudBadge();render();return}
     try{
       const remote=await CLOUD.api.readAll(u.uid);
       const sameOwner=!S.cloudUid||S.cloudUid===u.uid;
@@ -374,7 +380,6 @@ async function cloudStart(){
         if(rAyar)for(const k of SYNC_AYAR)if(k in rAyar)S.ayar[k]=rAyar[k];
       }
       S.cloudUid=u.uid;CLOUD.ready=true;saveLocal();applyTheme();
-      const before=Object.keys(CLOUD.last).length;
       cloudPush();
       if(!hasRemote&&COLS.some(c=>S[c].length))toast("Veriler buluta yedeklendi");
       CLOUD.unsubs=CLOUD.api.listen(u.uid,(col,docs,meta)=>{
@@ -382,8 +387,9 @@ async function cloudStart(){
         applyRemote(col,docs);cloudBadge();renderSoft();
       });
       render();
-    }catch(e){CLOUD.err=cloudErr(e);cloudBadge();toast("Bulut: "+CLOUD.err)}
-  });
+    }catch(e){
+      if((e&&e.code)==="permission-denied"){CLOUD.denied=true;CLOUD.err="Bu hesap henüz onaylı değil";cloudBadge();render();return}
+      CLOUD.err=cloudErr(e);cloudBadge();toast("Bulut: "+CLOUD.err)}
 }
 /* açık bir form varken ekranı baştan çizme; arka plandaki görünümü sessizce güncelle */
 let softT=null;function renderSoft(){clearTimeout(softT);softT=setTimeout(()=>{const y=window.scrollY;render();window.scrollTo(0,y)},120)}
@@ -398,6 +404,8 @@ function cloudBadge(){
   b.hidden=false;
   let st,t;
   if(!CLOUD.user){st="off";t="Bulut kapalı: giriş yap"}
+  else if(CLOUD.needVerify){st="wait";t="E-posta doğrulaması bekleniyor"}
+  else if(CLOUD.denied){st="err";t="Hesap onay bekliyor"}
   else if(CLOUD.err){st="err";t="Eşitleme sorunu"}
   else if(CLOUD.pending||!navigator.onLine){st="wait";t=navigator.onLine?"Eşitleniyor":"İnternet yok, sonra eşitlenecek"}
   else{st="ok";t="Bulutla eşitlendi"}
@@ -416,7 +424,9 @@ async function fbAdapter(cfg){
     onAuth:cb=>A.onAuthStateChanged(auth,cb),
     google:()=>A.signInWithPopup(auth,new A.GoogleAuthProvider()),
     emailIn:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),
-    emailUp:(e,p)=>A.createUserWithEmailAndPassword(auth,e,p),
+    emailUp:async(e,p)=>{const c=await A.createUserWithEmailAndPassword(auth,e,p);try{await A.sendEmailVerification(c.user)}catch(x){}return c},
+    sendVerify:()=>A.sendEmailVerification(auth.currentUser),
+    async reloadUser(){if(!auth.currentUser)return null;await A.reload(auth.currentUser);await auth.currentUser.getIdToken(true);return auth.currentUser},
     reset:e=>A.sendPasswordResetEmail(auth,e),
     out:()=>A.signOut(auth),
     async readAll(uid){const o={};await Promise.all([...COLS,"meta"].map(async c=>{const sn=await F.getDocs(colRef(uid,c));o[c]=sn.docs.map(d=>({id:d.id,...d.data()}))}));return o},
@@ -428,6 +438,32 @@ async function fbAdapter(cfg){
 /* ---------- hesap ekranı ---------- */
 function openAccount(){
   if(!CLOUD.api){toast(CLOUD.err||"Bulut henüz hazır değil, internet bağlantısını kontrol et");cloudStart();return}
+  if(CLOUD.user&&CLOUD.needVerify){
+    const u=CLOUD.user;
+    sheet(`<h3>E-postanı doğrula</h3><p class="sub"><b>${esc(u.email)}</b> adresine bir doğrulama bağlantısı gönderdik.</p>
+    <p class="hint">E-postadaki bağlantıya dokun (gelmediyse Gereksiz/Spam klasörüne bak), sonra buraya dönüp <b>Doğruladım</b>'a bas. Doğrulanana kadar kayıtların sadece bu telefonda saklanır.</p>
+    <p class="err" id="vErr"></p>
+    <button class="btn pri" id="vOk">Doğruladım</button>
+    <div class="btns grow"><button class="btn" id="vRe">Tekrar gönder</button><button class="btn" id="vOut">Çıkış yap</button></div>`,(q,close)=>{
+      q("#vOk").onclick=async()=>{q("#vErr").textContent="";try{const nu=await CLOUD.api.reloadUser();if(nu&&nu.emailVerified){close();toast("E-posta doğrulandı");cloudOnUser(nu)}else q("#vErr").textContent="Henüz doğrulanmamış görünüyor. Bağlantıya dokunduktan sonra tekrar dene."}catch(e){q("#vErr").textContent=cloudErr(e)}};
+      q("#vRe").onclick=async()=>{try{await CLOUD.api.sendVerify();toast("Doğrulama e-postası tekrar gönderildi")}catch(e){q("#vErr").textContent=cloudErr(e)}};
+      q("#vOut").onclick=async()=>{try{await CLOUD.api.out()}catch(e){}close();render();toast("Çıkış yapıldı. Kayıtların bu telefonda duruyor.")};
+    });
+    return;
+  }
+  if(CLOUD.user&&CLOUD.denied){
+    const u=CLOUD.user;
+    sheet(`<h3>Hesap onay bekliyor</h3><p class="sub">Bu uygulamayı yalnızca onaylı kişiler buluta bağlayabilir.</p>
+    <div class="card list"><div class="item"><span class="av warn">${ic("alert",2)}</span><span class="main"><b>${esc(u.email||"")}</b><small>Onaylı listede değil</small></span><button class="btn sm" id="dCp">Kopyala</button></div></div>
+    <p class="hint">Bu e-posta adresini uygulamayı kuran kişiye ilet; seni listeye eklesin. Eklendikten sonra <b>Tekrar dene</b>'ye bas. Bu arada uygulamayı kullanmaya devam edebilirsin; kayıtların bu telefonda duruyor ve onaylanınca buluta aktarılacak.</p>
+    <button class="btn pri" id="dRe">Tekrar dene</button>
+    <button class="btn" id="dOut">Çıkış yap</button>`,(q,close)=>{
+      q("#dCp").onclick=async()=>{try{await navigator.clipboard.writeText(u.email);toast("Kopyalandı")}catch(e){}};
+      q("#dRe").onclick=async()=>{close();await cloudOnUser(u);toast(CLOUD.ready?"Onaylandı, eşitleniyor":"Hâlâ onaylı değil")};
+      q("#dOut").onclick=async()=>{try{await CLOUD.api.out()}catch(e){}close();render();toast("Çıkış yapıldı. Kayıtların bu telefonda duruyor.")};
+    });
+    return;
+  }
   if(CLOUD.user){
     const u=CLOUD.user;
     sheet(`<h3>Hesap ve bulut</h3>
@@ -437,8 +473,10 @@ function openAccount(){
     <button class="btn danger" id="aOut">Çıkış yap</button>`,(q,close)=>{
       q("#aOut").onclick=async()=>{
         if(!await confirmSheet("Çıkış yapılsın mı?","Verilerin bulutta kalır. Bu telefondaki kopya silinir; tekrar giriş yapınca geri gelir.","Çıkış yap",true))return;
+        const synced=CLOUD.ready&&!CLOUD.pending&&!CLOUD.err;
         try{await CLOUD.api.out()}catch(e){}
-        const pin=S.ayar.pinHash,t=S.tufeOto;S=blank();S.ayar.pinHash=pin;S.tufeOto=t;CLOUD.last={};saveLocal();closeAllSheets();render();toast("Çıkış yapıldı");
+        if(synced){const pin=S.ayar.pinHash,t=S.tufeOto;S=blank();S.ayar.pinHash=pin;S.tufeOto=t;CLOUD.last={};saveLocal()}
+        closeAllSheets();render();toast(synced?"Çıkış yapıldı":"Çıkış yapıldı. Eşitlenmemiş kayıtlar olabileceği için telefondaki kopya silinmedi.");
       };
     });
     return;
@@ -457,11 +495,11 @@ function openAccount(){
     const ep=()=>[q("#aE").value.trim(),q("#aP").value];
     q("#aG").onclick=()=>run(()=>CLOUD.api.google());
     q("#aIn").onclick=()=>{const[e,p]=ep();if(!e||!p){q("#aErr").textContent="E-posta ve şifreyi yaz.";return}run(()=>CLOUD.api.emailIn(e,p))};
-    q("#aUp").onclick=()=>{const[e,p]=ep();if(!e||p.length<6){q("#aErr").textContent="E-posta ve en az 6 karakterlik şifre gir.";return}run(()=>CLOUD.api.emailUp(e,p))};
+    q("#aUp").onclick=()=>{const[e,p]=ep();if(!e||p.length<6){q("#aErr").textContent="E-posta ve en az 6 karakterlik şifre gir.";return}run(()=>CLOUD.api.emailUp(e,p)).then(()=>{if(CLOUD.needVerify)setTimeout(openAccount,300)})};
     q("#aR").onclick=async()=>{const e=q("#aE").value.trim();if(!e){q("#aErr").textContent="Önce e-posta adresini yaz.";return}try{await CLOUD.api.reset(e);q("#aErr").style.color="var(--ok)";q("#aErr").textContent="Şifre sıfırlama bağlantısı e-postana gönderildi."}catch(x){q("#aErr").textContent=cloudErr(x)}};
   });
 }
-const cloudLabel=()=>CLOUD.err?"Eşitleme sorunu: "+CLOUD.err:!navigator.onLine?"İnternet yok · bağlantı gelince eşitlenecek":CLOUD.pending?"Eşitleniyor…":"Bulutla eşitlendi";
+const cloudLabel=()=>CLOUD.needVerify?"E-posta doğrulaması bekleniyor":CLOUD.denied?"Hesap onay bekliyor":CLOUD.err?"Eşitleme sorunu: "+CLOUD.err:!navigator.onLine?"İnternet yok · bağlantı gelince eşitlenecek":CLOUD.pending?"Eşitleniyor…":"Bulutla eşitlendi";
 const kById=id=>S.kiracilar.find(k=>k.id===id);
 const mById=id=>S.mulkler.find(m=>m.id===id);
 const isActive=k=>!k.cikis||k.cikis>todayISO();
@@ -652,7 +690,8 @@ function vOzet(){
   }
   const yed=S.ayar.sonYedek?daysBetween(parseISO(S.ayar.sonYedek)||today(),today()):999;
   const cloudOK=!!CLOUD.user;
-  if(CLOUD.api&&!CLOUD.user)h+=`<div class="banner info">${ic("check",2)}<span><b>Verilerin kaybolmasın.</b> Giriş yap; her kayıt buluta yedeklensin, telefon değişse de geri gelsin.</span><button id="bAcc">Giriş yap</button></div>`;
+  if(CLOUD.user&&(CLOUD.needVerify||CLOUD.denied))h+=`<div class="banner warn">${ic("alert")}<span>${CLOUD.needVerify?"<b>E-postanı doğrula.</b> Doğrulanana kadar kayıtlar buluta yedeklenmiyor.":"<b>Hesabın onay bekliyor.</b> Kayıtlar şimdilik sadece bu telefonda."}</span><button id="bAcc">Aç</button></div>`;
+  else if(CLOUD.api&&!CLOUD.user)h+=`<div class="banner info">${ic("check",2)}<span><b>Verilerin kaybolmasın.</b> Giriş yap; her kayıt buluta yedeklensin, telefon değişse de geri gelsin.</span><button id="bAcc">Giriş yap</button></div>`;
   else if(!cloudOK&&S.kiracilar.length&&yed>30)h+=`<div class="banner warn">${ic("alert")}<span>${S.ayar.sonYedek?yed+" gündür yedek alınmadı.":"Henüz yedek alınmadı."} Veriler sadece bu telefonda duruyor.</span><button id="bYedek">Yedek al</button></div>`;
   h+=`<div class="hero"><div class="lbl">${esc(AYLAR[NOW.getMonth()])} tahsilatı</div><div class="big num">${TL.format(col)}</div><div class="bar"><i style="width:${pct}%"></i></div><div class="row"><span>Beklenen ${TL.format(exp)}</span><span>%${pct}</span></div></div>`;
   h+=`<div class="kpis">
@@ -1229,10 +1268,10 @@ function openSettings(){
   <div class="card list"><button class="item" id="sPin"><span class="av">${ic("check")}</span><span class="main"><b>${S.ayar.pinHash?"PIN kilidi açık":"PIN kilidi"}</b><small>${S.ayar.pinHash?"Değiştirmek veya kapatmak için dokun":"Uygulama açılırken 4 haneli şifre sorulsun"}</small></span>${ic("right")}</button></div></div>
 
   ${CLOUD.api||FIREBASE_CONFIG?`<div class="sec"><div class="sechd"><h2>Hesap ve bulut</h2></div>
-  <div class="card list"><button class="item" id="sAcc"><span class="av ${CLOUD.user?"ok":"warn"}">${ic(CLOUD.user?"check":"alert",2)}</span><span class="main"><b>${CLOUD.user?esc(CLOUD.user.email||"Giriş yapıldı"):"Giriş yapılmadı"}</b><small>${CLOUD.user?esc(cloudLabel()):"Giriş yap, veriler buluta yedeklensin"}</small></span>${ic("right")}</button></div></div>`:""}
+  <div class="card list"><button class="item" id="sAcc"><span class="av ${CLOUD.ready?"ok":"warn"}">${ic(CLOUD.ready?"check":"alert",2)}</span><span class="main"><b>${CLOUD.user?esc(CLOUD.user.email||"Giriş yapıldı"):"Giriş yapılmadı"}</b><small>${CLOUD.user?esc(cloudLabel()):"Giriş yap, veriler buluta yedeklensin"}</small></span>${ic("right")}</button></div></div>`:""}
 
   <div class="sec"><div class="sechd"><h2>Yedek ve veri</h2></div>
-  <p class="hint" style="margin-top:-4px">${CLOUD.user?"Kayıtların bulutta saklanıyor. Yine de istersen ek bir yedek dosyası alabilirsin.":"Kayıtlar şu an sadece bu telefonda saklanıyor. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder."}${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
+  <p class="hint" style="margin-top:-4px">${CLOUD.ready?"Kayıtların bulutta saklanıyor. Yine de istersen ek bir yedek dosyası alabilirsin.":"Kayıtlar şu an sadece bu telefonda saklanıyor. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder."}${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
   <div class="btns grow"><button class="btn pri" id="sBak">Yedek al</button><button class="btn" id="sRes">Yedekten yükle</button></div>
   <div class="btns grow"><button class="btn" id="sImp">Excel'den kiracı aktar</button><button class="btn" id="sTpl">Excel şablonu</button></div>
   <input type="file" id="fRes" hidden><input type="file" id="fImp" accept=".xlsx,.xls,.csv" hidden></div>
@@ -1296,7 +1335,7 @@ function restore(file,closeSettings){
 let xlsxP=null;
 function loadXLSX(){
   if(window.XLSX)return Promise.resolve(window.XLSX);
-  if(!xlsxP)xlsxP=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";s.onload=()=>res(window.XLSX);s.onerror=()=>{xlsxP=null;rej(new Error("x"))};document.head.appendChild(s)});
+  if(!xlsxP)xlsxP=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";s.onload=()=>res(window.XLSX);s.onerror=()=>{xlsxP=null;rej(new Error("x"))};document.head.appendChild(s)});
   return xlsxP;
 }
 async function saveXlsx(name,sheets){

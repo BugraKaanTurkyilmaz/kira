@@ -1,9 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Her kullanıcı yalnızca kendi klasörünü okuyup yazabilir.
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+    // Giriş yapmış, e-postası doğrulanmış ve "izinli" listesinde olan kişi mi?
+    function izinli() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/izinli/$(request.auth.token.email.lower()));
+    }
+
+    // Uygulamanın kullandığı kayıt türleri dışında hiçbir şey yazılamaz.
+    function gecerliTur(tur, id) {
+      return tur in ['mulkler', 'kiracilar', 'odemeler', 'giderler']
+        || (tur == 'meta' && id == 'ayar');
+    }
+
+    // Her kullanıcı yalnızca kendi klasörüne erişebilir.
+    match /users/{uid}/{tur}/{id} {
+      allow read, delete: if izinli() && request.auth.uid == uid && gecerliTur(tur, id);
+      allow create, update: if izinli() && request.auth.uid == uid && gecerliTur(tur, id)
+        && request.resource.data.size() <= 50;
+    }
+
+    // Onaylı e-posta listesi: sadece Firebase konsolundan düzenlenir.
+    // Kişi yalnızca kendi adresinin listede olup olmadığını sorabilir.
+    match /izinli/{eposta} {
+      allow get: if request.auth != null
+        && request.auth.token.email != null
+        && eposta == request.auth.token.email.lower();
     }
   }
 }
