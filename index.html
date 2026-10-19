@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.5.0";
+const VERSION="1.5.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -705,8 +705,8 @@ function vOzet(){
   /* yaklaşan zamlar */
   const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
   if(zr.length){
-    const yakin=zr.filter(x=>x.r.gun<=60),show=ui.zAll?zr:yakin;
-    h+=`<section class="sec"><div class="sechd"><h2>${ui.zAll?"Zam takvimi":"Yaklaşan zamlar"}</h2><button id="zAll">${ui.zAll?"Sadece yaklaşanlar":`Tümü (${zr.length})`}</button></div>`;
+    const yakin=zr.filter(x=>x.r.gun<=60),show=ui.zAll?zr:yakin.slice(0,3);
+    h+=`<section class="sec"><div class="sechd"><h2>${ui.zAll?"Zam takvimi":"Yaklaşan zamlar"}</h2><button id="zAll">${ui.zAll?"Daralt":`Tümü (${zr.length})`}</button></div>`;
     if(!show.length){const n=zr[0];h+=`<div class="card banner" style="background:var(--surface)">${ic("up")}<span>Önümüzdeki 60 günde zam yok. Sıradaki: <b>${esc(n.k.ad)}</b>, ${esc(fmtDate(toISO(n.r.tarih)))}.</span></div>`}
     else h+=`<div class="card list">${show.map(({k,r})=>{
       const max=Math.floor((k.kira||0)*(1+L.tufe/100));
@@ -746,19 +746,33 @@ function vOzet(){
      }
    }}
   todo.sort((a,b)=>a.o-b.o);
-  h+=`<section class="sec"><div class="sechd"><h2>Yapılacaklar</h2></div>`;
-  if(!S.kiracilar.length)h+="";
-  else if(!todo.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Her şey yolunda. Gecikmiş ödeme veya biten sigorta yok.</span></div>`;
-  else h+=`<div class="card list">${todo.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av ${x.cls==="info"?"":x.cls==="mute"?"":x.cls}">${x.a==="raise"?ic("up"):x.a==="open"?ic("doc"):initials(x.k.ad)}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="pay"?`<button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button>`:x.a==="raise"?`<button class="btn sm pri" data-raise="${x.k.id}">Zam</button>`:""}</span></div>`).join("")}</div>`;
-  h+=`</section>`;
+  /* tahsilat özeti: kiracılar tek tek değil, gruplar hâlinde; dokununca açılır */
+  const lateL=todo.filter(x=>x.o===0&&x.k),soonL=todo.filter(x=>x.o===1&&x.k),other=todo.filter(x=>!(x.k&&(x.o===0||x.o===1)));
+  const sumL=lateL.reduce((t,x)=>t+balance(x.k),0);
+  const sumS=soonL.reduce((t,x)=>{const p=periodState(x.k,ym);return t+p.due-p.paid},0);
+  const mini=(x,amt,sub)=>`<div class="item" style="padding:9px 14px 9px 22px"><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b style="font-weight:500">${esc(x.k.ad)}</b><small>${esc(sub)}</small></span><span class="side" style="margin-right:4px"><b>${TL.format(amt)}</b></span><button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button></div>`;
+  const grp=(key,cls,icn,title,n,sum,rows)=>`<button class="item" data-grp="${key}"><span class="av ${cls}">${icn}</span><span class="main"><b>${title}</b><small>${n} kiracı</small></span><span class="side"><b style="color:var(--${cls==="bad"?"bad":"warn"})">${TL.format(sum)}</b><small>${ui["o"+key]?"Gizle":"Göster"}</small></span></button>${ui["o"+key]?rows:""}`;
+  if(S.kiracilar.length){
+    h+=`<section class="sec"><div class="sechd"><h2>Tahsilat durumu</h2>${lateL.length+soonL.length>1?`<button id="goT">Toplu tahsilat</button>`:""}</div>`;
+    if(!lateL.length&&!soonL.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Gecikmiş ödeme yok, bu hafta ödeme günü gelen de yok.</span></div>`;
+    else h+=`<div class="card list">${lateL.length?grp("Late","bad",ic("alert",2),"Gecikmiş ödemeler",lateL.length,sumL,lateL.map(x=>mini(x,balance(x.k),x.s)).join("")):""}${soonL.length?grp("Soon","warn",ic("cal"),"Bu hafta ödeme günü",soonL.length,sumS,soonL.map(x=>{const p=periodState(x.k,ym);return mini(x,p.due-p.paid,x.t)}).join("")):""}</div>`;
+    h+=`</section>`;
+  }
+  if(other.length){
+    h+=`<section class="sec"><div class="sechd"><h2>Yapılacaklar</h2></div>`;
+    h+=`<div class="card list">${other.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av">${ic("doc")}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span></div>`).join("")}</div>`;
+    h+=`</section>`;
+  }
 
-  /* son hareketler */
-  const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0)).slice(0,5);
-  if(son.length)h+=`<section class="sec"><div class="sechd"><h2>Son tahsilatlar</h2><button id="allPay">Tümü</button></div><div class="card list">${son.map(payRow).join("")}</div></section>`;
+  /* son hareketler: kısa */
+  const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0)).slice(0,3);
+  if(son.length)h+=`<section class="sec"><div class="sechd"><h2>Son tahsilatlar</h2><button id="allPay">Tümü</button></div><div class="card list">${son.map(o=>{const k=kById(o.kiraciId);return`<button class="item" data-rcpt="${o.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k?k.ad:"Silinmiş kiracı")}</b><small>${esc(fmtShortDate(o.tarih))} · ${esc(ymShort(o.donem))}</small></span><span class="side"><b>${TL.format(o.tutar)}</b></span></button>`}).join("")}</div></section>`;
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
   $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
+  $("view").querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>{const k="o"+b.dataset.grp;ui[k]=!ui[k];const y=window.scrollY;render();window.scrollTo(0,y)});
+  $("goT")&&($("goT").onclick=()=>{ui.tYM=curYM();go("tahsilat")});
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
   $("view").querySelectorAll("[data-renew]").forEach(b=>b.onclick=()=>openMulk(b.dataset.renew,null,b.dataset.f));
   $("view").querySelectorAll("[data-tax]").forEach(b=>b.onclick=()=>openGider(null,{tur:"Emlak vergisi",mulkId:b.dataset.tax}));
