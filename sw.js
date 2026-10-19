@@ -1,5 +1,5 @@
 /* Kira Defteri: uygulamayı internetsiz açılabilir yapar. tufe.json her zaman önce internetten denenir. */
-const CACHE = "kira-defteri-v1.3.2";
+const CACHE = "kira-defteri-v1.4.0";
 const CORE = ["./", "index.html", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "tufe.json"];
 /* version.json hiç önbelleğe alınmaz: güncelleme kontrolü her zaman sunucuya sorar */
 
@@ -30,7 +30,7 @@ self.addEventListener("fetch", e => {
     );
     return;
   }
-  if (sameOrigin || url.hostname === "cdnjs.cloudflare.com") {
+  if (sameOrigin || url.hostname === "cdnjs.cloudflare.com" || (url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/"))) {
     e.respondWith(
       caches.match(req).then(hit => hit || fetch(req).then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }

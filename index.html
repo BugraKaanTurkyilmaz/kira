@@ -50,6 +50,12 @@ button{cursor:pointer;touch-action:manipulation}
 .hdr small{display:block;font-size:13px;color:var(--muted);font-weight:400;letter-spacing:0}
 .iconbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;flex-shrink:0}
 .iconbtn svg{width:20px;height:20px}
+.iconbtn.cloud{position:relative}
+.iconbtn.cloud i{position:absolute;right:6px;bottom:6px;width:10px;height:10px;border-radius:99px;border:2px solid var(--surface);background:var(--faint)}
+.iconbtn.cloud[data-st="ok"]{color:var(--ok)} .iconbtn.cloud[data-st="ok"] i{background:var(--ok)}
+.iconbtn.cloud[data-st="wait"]{color:var(--warn)} .iconbtn.cloud[data-st="wait"] i{background:var(--warn)}
+.iconbtn.cloud[data-st="err"]{color:var(--bad)} .iconbtn.cloud[data-st="err"] i{background:var(--bad)}
+.iconbtn.cloud[data-st="off"]{color:var(--muted)}
 main{max-width:760px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right)) calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 90px) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:18px}
 
 /* nav */
@@ -215,6 +221,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <body>
 <header class="hdr">
   <h1 id="title">Özet<small id="subtitle"></small></h1>
+  <button class="iconbtn cloud" id="cloudBtn" hidden aria-label="Bulut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.6 1.5A3.75 3.75 0 0 1 17.5 18z"/></svg><i></i></button>
   <button class="iconbtn" id="btnSettings" aria-label="Ayarlar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </header>
 <main id="view"></main>
@@ -226,7 +233,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.3.2";
+const VERSION="1.4.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -283,10 +290,171 @@ function load(){
   try{const raw=localStorage.getItem(KEY);if(raw){const d=JSON.parse(raw);S={...blank(),...d,ayar:{...blank().ayar,...(d.ayar||{})}}}}catch(e){console.warn(e)}
 }
 let saveErr=false;
-function save(){
+function saveLocal(){
   try{localStorage.setItem(KEY,JSON.stringify(S));saveErr=false}
   catch(e){saveErr=true;toast("Kaydedilemedi: telefonda yer kalmamış olabilir")}
 }
+function save(){saveLocal();cloudPush()}
+
+/* ================== BULUT (Firebase) ==================
+   Yapı: users/{uid}/{mulkler|kiracilar|odemeler|giderler}/{id} ve users/{uid}/meta/ayar
+   Telefondaki kopya her zaman tutulur; giriş yapılmışsa her değişiklik buluta da yazılır. */
+const FIREBASE_CONFIG=null;
+const COLS=["mulkler","kiracilar","odemeler","giderler"];
+const SYNC_AYAR=["ad","tel","iban","tufe","tema"];
+const CLOUD={on:false,api:null,user:null,ready:false,last:{},pending:false,err:"",unsubs:[],seen:{}};
+function cloudMap(){
+  const m={};
+  for(const c of COLS)for(const r of S[c])if(r&&r.id)m[c+"/"+r.id]=JSON.stringify(r);
+  const a={};for(const k of SYNC_AYAR)a[k]=S.ayar[k]??null;m["meta/ayar"]=JSON.stringify(a);
+  return m;
+}
+function cloudPush(){
+  if(!CLOUD.user||!CLOUD.ready)return;
+  const now=cloudMap(),prev=CLOUD.last,ops=[];
+  for(const k in now)if(prev[k]!==now[k])ops.push({set:k,data:JSON.parse(now[k])});
+  for(const k in prev)if(!(k in now))ops.push({del:k});
+  if(!ops.length)return;
+  CLOUD.last=now;CLOUD.pending=true;cloudBadge();
+  CLOUD.api.write(CLOUD.user.uid,ops).then(()=>{CLOUD.err="";cloudBadge()}).catch(e=>{CLOUD.err=cloudErr(e);cloudBadge();toast("Buluta yazılamadı: "+CLOUD.err)});
+}
+function applyRemote(col,docs){
+  if(col==="meta"){
+    const a=docs.find(d=>d.id==="ayar");
+    if(a){for(const k of SYNC_AYAR)if(k in a)S.ayar[k]=a[k];applyTheme()}
+    const rest={};for(const k in CLOUD.last)if(k!=="meta/ayar")rest[k]=CLOUD.last[k];
+    if(a){const o={};for(const k of SYNC_AYAR)o[k]=a[k]??null;rest["meta/ayar"]=JSON.stringify(o)}
+    CLOUD.last=rest;
+  }else{
+    S[col]=docs.map(({id,...d})=>({...d,id}));
+    const rest={};for(const k in CLOUD.last)if(!k.startsWith(col+"/"))rest[k]=CLOUD.last[k];
+    for(const r of S[col])rest[col+"/"+r.id]=JSON.stringify(r);
+    CLOUD.last=rest;
+  }
+  saveLocal();
+}
+function mergeById(local,remote){
+  const m=new Map();for(const r of local)if(r&&r.id)m.set(r.id,r);for(const r of remote)m.set(r.id,r);return[...m.values()];
+}
+async function cloudStart(){
+  if(CLOUD.on)return;
+  const fake=window.__FB_FAKE;
+  if(!FIREBASE_CONFIG&&!fake)return;
+  CLOUD.on=true;
+  try{CLOUD.api=fake||await fbAdapter(FIREBASE_CONFIG)}catch(e){CLOUD.on=false;CLOUD.err="Bulut yüklenemedi (internet?)";cloudBadge();return}
+  CLOUD.api.onAuth(async u=>{
+    CLOUD.unsubs.forEach(f=>{try{f()}catch(e){}});CLOUD.unsubs=[];CLOUD.ready=false;
+    CLOUD.user=u||null;cloudBadge();
+    if(!u){render();return}
+    try{
+      const remote=await CLOUD.api.readAll(u.uid);
+      const sameOwner=!S.cloudUid||S.cloudUid===u.uid;
+      const hasRemote=COLS.some(c=>remote[c].length);
+      const rAyar=remote.meta.find(d=>d.id==="ayar");
+      /* CLOUD.last = buluttaki durum; böylece sadece eksikler gönderilir */
+      CLOUD.last={};
+      for(const c of COLS)for(const r of remote[c])CLOUD.last[c+"/"+r.id]=JSON.stringify(r);
+      if(rAyar){const o={};for(const k of SYNC_AYAR)o[k]=rAyar[k]??null;CLOUD.last["meta/ayar"]=JSON.stringify(o)}
+      if(sameOwner){
+        /* ilk giriş ya da aynı hesap: telefondakiyle buluttakini birleştir, hiçbir kayıt kaybolmaz */
+        for(const c of COLS)S[c]=mergeById(S[c],remote[c].map(({id,...d})=>({...d,id})));
+        if(rAyar)for(const k of SYNC_AYAR){if(rAyar[k]!=null&&rAyar[k]!=="")S.ayar[k]=rAyar[k]}
+      }else{
+        /* telefonda başka bir hesabın verisi var: karıştırma, bu hesabın bulut verisini getir */
+        const keep={pinHash:S.ayar.pinHash};const t=S.tufeOto;
+        S=blank();S.ayar.pinHash=keep.pinHash;S.tufeOto=t;
+        for(const c of COLS)S[c]=remote[c].map(({id,...d})=>({...d,id}));
+        if(rAyar)for(const k of SYNC_AYAR)if(k in rAyar)S.ayar[k]=rAyar[k];
+      }
+      S.cloudUid=u.uid;CLOUD.ready=true;saveLocal();applyTheme();
+      const before=Object.keys(CLOUD.last).length;
+      cloudPush();
+      if(!hasRemote&&COLS.some(c=>S[c].length))toast("Veriler buluta yedeklendi");
+      CLOUD.unsubs=CLOUD.api.listen(u.uid,(col,docs,meta)=>{
+        CLOUD.pending=!!(meta&&meta.hasPendingWrites);
+        applyRemote(col,docs);cloudBadge();renderSoft();
+      });
+      render();
+    }catch(e){CLOUD.err=cloudErr(e);cloudBadge();toast("Bulut: "+CLOUD.err)}
+  });
+}
+/* açık bir form varken ekranı baştan çizme; arka plandaki görünümü sessizce güncelle */
+let softT=null;function renderSoft(){clearTimeout(softT);softT=setTimeout(()=>{const y=window.scrollY;render();window.scrollTo(0,y)},120)}
+function cloudErr(e){
+  const c=(e&&e.code)||"";
+  const M={"auth/invalid-credential":"E-posta veya şifre hatalı.","auth/wrong-password":"Şifre hatalı.","auth/user-not-found":"Bu e-postayla hesap yok.","auth/invalid-email":"E-posta adresi geçersiz.","auth/email-already-in-use":"Bu e-postayla zaten hesap var. Giriş yap'ı dene.","auth/weak-password":"Şifre en az 6 karakter olmalı.","auth/popup-closed-by-user":"Giriş penceresi kapatıldı.","auth/cancelled-popup-request":"Giriş penceresi kapatıldı.","auth/popup-blocked":"Giriş penceresi engellendi. E-posta ile girişi dene.","auth/unauthorized-domain":"Bu adres Firebase'de yetkili değil (Authorized domains).","auth/operation-not-allowed":"Bu giriş yöntemi Firebase'de açık değil.","auth/network-request-failed":"İnternet bağlantısı yok.","auth/too-many-requests":"Çok fazla deneme. Biraz bekleyip tekrar dene.","permission-denied":"Bulut erişim izni yok (güvenlik kuralları).","unavailable":"Buluta ulaşılamıyor; internet gelince eşitlenecek."};
+  return M[c]||((e&&e.message)||"Bilinmeyen hata").replace(/^Firebase: /,"");
+}
+function cloudBadge(){
+  const b=$("cloudBtn");if(!b)return;
+  if(!CLOUD.on&&!FIREBASE_CONFIG&&!window.__FB_FAKE){b.hidden=true;return}
+  b.hidden=false;
+  let st,t;
+  if(!CLOUD.user){st="off";t="Bulut kapalı: giriş yap"}
+  else if(CLOUD.err){st="err";t="Eşitleme sorunu"}
+  else if(CLOUD.pending||!navigator.onLine){st="wait";t=navigator.onLine?"Eşitleniyor":"İnternet yok, sonra eşitlenecek"}
+  else{st="ok";t="Bulutla eşitlendi"}
+  b.dataset.st=st;b.setAttribute("aria-label",t);b.title=t;
+}
+window.addEventListener("online",()=>{cloudBadge();if(!CLOUD.api){CLOUD.on=false;cloudStart()}});window.addEventListener("offline",cloudBadge);
+
+async function fbAdapter(cfg){
+  const B="https://www.gstatic.com/firebasejs/10.12.2/";
+  const [{initializeApp},A,F]=await Promise.all([import(B+"firebase-app.js"),import(B+"firebase-auth.js"),import(B+"firebase-firestore.js")]);
+  const app=initializeApp(cfg);
+  let auth;try{auth=A.initializeAuth(app,{persistence:[A.indexedDBLocalPersistence,A.browserLocalPersistence],popupRedirectResolver:A.browserPopupRedirectResolver})}catch(e){auth=A.getAuth(app)}
+  let db;try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
+  const colRef=(uid,c)=>F.collection(db,"users",uid,c);
+  return{
+    onAuth:cb=>A.onAuthStateChanged(auth,cb),
+    google:()=>A.signInWithPopup(auth,new A.GoogleAuthProvider()),
+    emailIn:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),
+    emailUp:(e,p)=>A.createUserWithEmailAndPassword(auth,e,p),
+    reset:e=>A.sendPasswordResetEmail(auth,e),
+    out:()=>A.signOut(auth),
+    async readAll(uid){const o={};await Promise.all([...COLS,"meta"].map(async c=>{const sn=await F.getDocs(colRef(uid,c));o[c]=sn.docs.map(d=>({id:d.id,...d.data()}))}));return o},
+    listen(uid,cb){return[...COLS,"meta"].map(c=>F.onSnapshot(colRef(uid,c),{includeMetadataChanges:true},sn=>cb(c,sn.docs.map(d=>({id:d.id,...d.data()})),{hasPendingWrites:sn.metadata.hasPendingWrites}),e=>{CLOUD.err=cloudErr(e);cloudBadge()}))},
+    async write(uid,ops){for(let i=0;i<ops.length;i+=400){const b=F.writeBatch(db);for(const o of ops.slice(i,i+400)){const[c,id]=(o.set||o.del).split("/");const r=F.doc(db,"users",uid,c,id);if(o.set)b.set(r,o.data);else b.delete(r)}await b.commit()}}
+  };
+}
+
+/* ---------- hesap ekranı ---------- */
+function openAccount(){
+  if(!CLOUD.api){toast(CLOUD.err||"Bulut henüz hazır değil, internet bağlantısını kontrol et");cloudStart();return}
+  if(CLOUD.user){
+    const u=CLOUD.user;
+    sheet(`<h3>Hesap ve bulut</h3>
+    <div class="card list"><div class="item"><span class="av ok">${ic("check",2)}</span><span class="main"><b>${esc(u.email||u.displayName||"Hesap")}</b><small>${esc(cloudLabel())}</small></span></div></div>
+    <p class="hint">Her kayıt, girildiği anda bulutta da saklanır. Telefon değişirse aynı hesapla giriş yapman yeterli; her şey geri gelir. İnternet yokken de çalışır, bağlantı gelince eşitlenir.</p>
+    ${CLOUD.err?`<p class="err">${esc(CLOUD.err)}</p>`:""}
+    <button class="btn danger" id="aOut">Çıkış yap</button>`,(q,close)=>{
+      q("#aOut").onclick=async()=>{
+        if(!await confirmSheet("Çıkış yapılsın mı?","Verilerin bulutta kalır. Bu telefondaki kopya silinir; tekrar giriş yapınca geri gelir.","Çıkış yap",true))return;
+        try{await CLOUD.api.out()}catch(e){}
+        const pin=S.ayar.pinHash,t=S.tufeOto;S=blank();S.ayar.pinHash=pin;S.tufeOto=t;CLOUD.last={};saveLocal();closeAllSheets();render();toast("Çıkış yapıldı");
+      };
+    });
+    return;
+  }
+  sheet(`<h3>Verilerini güvene al</h3><p class="sub">Giriş yap; kayıtların buluta yedeklensin, telefon değişse de kaybolmasın.</p>
+  <button class="btn pri" id="aG" style="width:100%"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="#fff" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3z"/><path fill="#fff" opacity=".85" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"/><path fill="#fff" opacity=".7" d="M6.4 14a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9z"/><path fill="#fff" opacity=".55" d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.5L6.4 10C7.2 7.7 9.4 5.9 12 5.9z"/></svg>Google ile giriş yap</button>
+  <div style="display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px"><span style="flex:1;height:1px;background:var(--line)"></span>veya e-posta ile<span style="flex:1;height:1px;background:var(--line)"></span></div>
+  <div class="fld"><label for="aE">E-posta</label><input id="aE" type="email" autocomplete="email" inputmode="email"></div>
+  <div class="fld"><label for="aP">Şifre</label><input id="aP" type="password" autocomplete="current-password" placeholder="En az 6 karakter"></div>
+  <p class="err" id="aErr"></p>
+  <div class="btns grow"><button class="btn" id="aUp">Hesap oluştur</button><button class="btn pri" id="aIn">Giriş yap</button></div>
+  <button class="btn ghost" id="aR">Şifremi unuttum</button>
+  <p class="hint">Veriler, bu uygulamayı kuran kişinin Google Firebase projesinde güvenli olarak saklanır. Her kullanıcı yalnızca kendi kayıtlarını görebilir. Bu telefondaki mevcut kayıtların girişten sonra hesabına aktarılır.</p>`,(q,close)=>{
+    const busy=(b,on)=>{q("#aG").disabled=q("#aIn").disabled=q("#aUp").disabled=on};
+    const run=async(fn)=>{q("#aErr").textContent="";busy(null,true);try{await fn();close();toast("Giriş yapıldı, eşitleniyor…")}catch(e){q("#aErr").textContent=cloudErr(e)}finally{busy(null,false)}};
+    const ep=()=>[q("#aE").value.trim(),q("#aP").value];
+    q("#aG").onclick=()=>run(()=>CLOUD.api.google());
+    q("#aIn").onclick=()=>{const[e,p]=ep();if(!e||!p){q("#aErr").textContent="E-posta ve şifreyi yaz.";return}run(()=>CLOUD.api.emailIn(e,p))};
+    q("#aUp").onclick=()=>{const[e,p]=ep();if(!e||p.length<6){q("#aErr").textContent="E-posta ve en az 6 karakterlik şifre gir.";return}run(()=>CLOUD.api.emailUp(e,p))};
+    q("#aR").onclick=async()=>{const e=q("#aE").value.trim();if(!e){q("#aErr").textContent="Önce e-posta adresini yaz.";return}try{await CLOUD.api.reset(e);q("#aErr").style.color="var(--ok)";q("#aErr").textContent="Şifre sıfırlama bağlantısı e-postana gönderildi."}catch(x){q("#aErr").textContent=cloudErr(x)}};
+  });
+}
+const cloudLabel=()=>CLOUD.err?"Eşitleme sorunu: "+CLOUD.err:!navigator.onLine?"İnternet yok · bağlantı gelince eşitlenecek":CLOUD.pending?"Eşitleniyor…":"Bulutla eşitlendi";
 const kById=id=>S.kiracilar.find(k=>k.id===id);
 const mById=id=>S.mulkler.find(m=>m.id===id);
 const isActive=k=>!k.cikis||k.cikis>todayISO();
@@ -476,7 +644,9 @@ function vOzet(){
     h+=`<div class="card empty"><b>Hoş geldin</b>Önce mülklerini, sonra kiracılarını ekle. Eski bir Excel listen varsa Ayarlar'dan tek seferde aktarabilirsin.<div class="btns" style="justify-content:center"><button class="btn" id="eM">${ic("building")}Mülk ekle</button><button class="btn pri" id="eK">${ic("plus",2)}Kiracı ekle</button></div></div>`;
   }
   const yed=S.ayar.sonYedek?daysBetween(parseISO(S.ayar.sonYedek)||today(),today()):999;
-  if(S.kiracilar.length&&yed>30)h+=`<div class="banner warn">${ic("alert")}<span>${S.ayar.sonYedek?yed+" gündür yedek alınmadı.":"Henüz yedek alınmadı."} Veriler sadece bu telefonda duruyor.</span><button id="bYedek">Yedek al</button></div>`;
+  const cloudOK=!!CLOUD.user;
+  if(CLOUD.api&&!CLOUD.user)h+=`<div class="banner info">${ic("check",2)}<span><b>Verilerin kaybolmasın.</b> Giriş yap; her kayıt buluta yedeklensin, telefon değişse de geri gelsin.</span><button id="bAcc">Giriş yap</button></div>`;
+  else if(!cloudOK&&S.kiracilar.length&&yed>30)h+=`<div class="banner warn">${ic("alert")}<span>${S.ayar.sonYedek?yed+" gündür yedek alınmadı.":"Henüz yedek alınmadı."} Veriler sadece bu telefonda duruyor.</span><button id="bYedek">Yedek al</button></div>`;
   h+=`<div class="hero"><div class="lbl">${esc(AYLAR[NOW.getMonth()])} tahsilatı</div><div class="big num">${TL.format(col)}</div><div class="bar"><i style="width:${pct}%"></i></div><div class="row"><span>Beklenen ${TL.format(exp)}</span><span>%${pct}</span></div></div>`;
   h+=`<div class="kpis">
     <div class="card kpi ${borc>0?"bad":"ok"}"><b class="num">${TL.format(borc)}</b><span>Gecikmiş alacak</span></div>
@@ -549,6 +719,7 @@ function vOzet(){
   $("eM")&&($("eM").onclick=()=>openMulk());
   $("eK")&&($("eK").onclick=()=>openKiraci());
   $("bYedek")&&($("bYedek").onclick=backup);
+  $("bAcc")&&($("bAcc").onclick=openAccount);
   $("allPay")&&($("allPay").onclick=()=>go("tahsilat"));
   setFab("Tahsilat",()=>openPay());
 }
@@ -1050,8 +1221,11 @@ function openSettings(){
   <div class="sec"><div class="sechd"><h2>Güvenlik</h2></div>
   <div class="card list"><button class="item" id="sPin"><span class="av">${ic("check")}</span><span class="main"><b>${S.ayar.pinHash?"PIN kilidi açık":"PIN kilidi"}</b><small>${S.ayar.pinHash?"Değiştirmek veya kapatmak için dokun":"Uygulama açılırken 4 haneli şifre sorulsun"}</small></span>${ic("right")}</button></div></div>
 
+  ${CLOUD.api||FIREBASE_CONFIG?`<div class="sec"><div class="sechd"><h2>Hesap ve bulut</h2></div>
+  <div class="card list"><button class="item" id="sAcc"><span class="av ${CLOUD.user?"ok":"warn"}">${ic(CLOUD.user?"check":"alert",2)}</span><span class="main"><b>${CLOUD.user?esc(CLOUD.user.email||"Giriş yapıldı"):"Giriş yapılmadı"}</b><small>${CLOUD.user?esc(cloudLabel()):"Giriş yap, veriler buluta yedeklensin"}</small></span>${ic("right")}</button></div></div>`:""}
+
   <div class="sec"><div class="sechd"><h2>Yedek ve veri</h2></div>
-  <p class="hint" style="margin-top:-4px">Tüm kayıtlar sadece bu telefonda saklanır. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder.${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
+  <p class="hint" style="margin-top:-4px">${CLOUD.user?"Kayıtların bulutta saklanıyor. Yine de istersen ek bir yedek dosyası alabilirsin.":"Kayıtlar şu an sadece bu telefonda saklanıyor. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder."}${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
   <div class="btns grow"><button class="btn pri" id="sBak">Yedek al</button><button class="btn" id="sRes">Yedekten yükle</button></div>
   <div class="btns grow"><button class="btn" id="sImp">Excel'den kiracı aktar</button><button class="btn" id="sTpl">Excel şablonu</button></div>
   <input type="file" id="fRes" hidden><input type="file" id="fImp" accept=".xlsx,.xls,.csv" hidden></div>
@@ -1063,6 +1237,7 @@ function openSettings(){
     q("#sSave").onclick=()=>{S.ayar.ad=q("#sAd").value.trim();S.ayar.tel=q("#sTel").value.trim();S.ayar.iban=q("#sIban").value.replace(/\s+/g," ").trim().toUpperCase();S.ayar.tema=q("#sTema").value;applyTheme();save();toast("Kaydedildi")};
     q("#sTema").onchange=()=>{S.ayar.tema=q("#sTema").value;applyTheme();save()};
     q("#sPin").onclick=()=>{close();openPinSetup()};
+    q("#sAcc")&&(q("#sAcc").onclick=()=>{close();openAccount()});
     q("#sBak").onclick=backup;
     q("#sRes").onclick=()=>q("#fRes").click();
     q("#fRes").onchange=e=>{const f=e.target.files[0];if(f)restore(f,close);e.target.value=""};
@@ -1071,8 +1246,8 @@ function openSettings(){
     q("#sTpl").onclick=downloadTemplate;
     q("#sInst")&&(q("#sInst").onclick=async()=>{deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;close()});
     q("#sWipe").onclick=async()=>{
-      if(!await confirmSheet("Tüm veriler silinsin mi?","Kiracılar, tahsilatlar, giderler ve ayarlar bu telefondan kalıcı olarak silinir. Önce yedek almanı öneririm.","Hepsini sil",true))return;
-      S=blank();save();closeAllSheets();render();toast("Tüm veriler silindi");
+      if(!await confirmSheet("Tüm veriler silinsin mi?",CLOUD.user?"Kiracılar, tahsilatlar, giderler ve ayarlar bu telefondan VE buluttan kalıcı olarak silinir. Önce yedek almanı öneririm.":"Kiracılar, tahsilatlar, giderler ve ayarlar bu telefondan kalıcı olarak silinir. Önce yedek almanı öneririm.","Hepsini sil",true))return;
+      {const u=S.cloudUid,p=S.ayar.pinHash;S=blank();S.cloudUid=u;S.ayar.pinHash=p}save();closeAllSheets();render();toast("Tüm veriler silindi");
     };
   });
 }
@@ -1099,9 +1274,11 @@ function restore(file,closeSettings){
       if(!d||!Array.isArray(d.kiracilar))throw 0;
       if(!await confirmSheet("Yedek yüklensin mi?",`Yedekte ${d.kiracilar.length} kiracı, ${(d.odemeler||[]).length} tahsilat var. Şu anki tüm veriler bu yedekle değiştirilecek.`,"Yükle",false))return;
       const keepPin=S.ayar.pinHash;
+      if(CLOUD.user&&!await confirmSheet("Bulut da güncellenecek","Hesabındaki bulut verileri de bu yedekle değiştirilecek.","Devam",false))return;
       S={...blank(),...d,ayar:{...blank().ayar,...(d.ayar||{})}};
       delete S._app;delete S._surum;delete S._tarih;
       if(!S.ayar.pinHash)S.ayar.pinHash=keepPin;
+      S.cloudUid=CLOUD.user?CLOUD.user.uid:(d.cloudUid||"");
       save();applyTheme();closeAllSheets();render();toast("Yedek yüklendi");
     }catch(e){toast("Bu dosya geçerli bir yedek değil")}
   };
@@ -1228,12 +1405,14 @@ async function checkUpdate(){
 load();applyTheme();
 try{const t=sessionStorage.getItem("tab");if(t&&TABS.some(x=>x[0]===t))tab=t}catch(e){}
 $("btnSettings").onclick=openSettings;
+$("cloudBtn").onclick=openAccount;
 render();
 lockIfNeeded();
 fetchTufe();
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 if("serviceWorker" in navigator&&location.protocol!=="file:")navigator.serviceWorker.register("sw.js").then(r=>{swReg=r}).catch(()=>{});
 setTimeout(checkUpdate,1500);
+cloudBadge();cloudStart();
 window.addEventListener("storage",e=>{if(e.key===KEY){load();render()}});
 </script>
 </body>
