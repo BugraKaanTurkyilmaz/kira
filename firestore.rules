@@ -16,8 +16,11 @@ service cloud.firestore {
     }
 
     // Her kullanıcı yalnızca kendi klasörüne erişebilir.
+    // Okuma listeler hâlinde yapıldığı için belge adına bakmaz, sadece kayıt türüne bakar.
     match /users/{uid}/{tur}/{id} {
-      allow read, delete: if izinli() && request.auth.uid == uid && gecerliTur(tur, id);
+      allow read: if izinli() && request.auth.uid == uid
+        && tur in ['mulkler', 'kiracilar', 'odemeler', 'giderler', 'meta'];
+      allow delete: if izinli() && request.auth.uid == uid && gecerliTur(tur, id);
       allow create, update: if izinli() && request.auth.uid == uid && gecerliTur(tur, id)
         && request.resource.data.size() <= 50;
     }
