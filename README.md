@@ -9,3 +9,6 @@ Telefona kurulabilen kira yönetim uygulaması: kiracılar, mülkler, tahsilat v
 ## Telefona kurma
 - **Android (Chrome):** Sayfayı aç → ⋮ menü → *Uygulamayı yükle* / *Ana ekrana ekle*
 - **iPhone (Safari):** Sayfayı aç → Paylaş → *Ana Ekrana Ekle*
+
+## Sürüm yayınlarken
+`index.html` içindeki `VERSION`, `sw.js` içindeki `CACHE` adı ve `version.json` birlikte artırılır. Açık uygulamalar `version.json`'a bakıp kendiliğinden yenilenir.
