@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.5.2";
+const VERSION="1.6.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -696,7 +696,7 @@ function vOzet(){
   h+=`<div class="hero"><div class="lbl">${esc(AYLAR[NOW.getMonth()])} tahsilatı</div><div class="big num">${TL.format(col)}</div><div class="bar"><i style="width:${pct}%"></i></div><div class="row"><span>Beklenen ${TL.format(exp)}</span><span>%${pct}</span></div></div>`;
   h+=`<div class="kpis">
     <div class="card kpi ${borc>0?"bad":"ok"}"><b class="num">${TL.format(borc)}</b><span>Gecikmiş alacak</span></div>
-    <div class="card kpi"><b class="num">${act.length}${mCount?` <span style="font-size:13px;color:var(--muted);font-weight:500">/ ${mCount} mülk</span>`:""}</b><span>${mCount?`Doluluk %${Math.round(occ/mCount*100)}`:"Aktif kiracı"}</span></div>
+    <button class="card kpi" id="kMulk" style="text-align:left;font:inherit;color:inherit;cursor:pointer"><b class="num">${mCount} mülk</b><span>${mCount?`${occ} dolu · ${mCount-occ} boş · ${act.length} kiracı`:`${act.length} kiracı · mülk ekle`}</span></button>
     <div class="card kpi"><b class="num">${TL.format(yGelir)}</b><span>${yil} tahsilat</span></div>
     <div class="card kpi"><b class="num">${TL.format(yGelir-yGider)}</b><span>${yil} net (gider ${TL.format(yGider)})</span></div>
   </div>`;
@@ -771,6 +771,7 @@ function vOzet(){
   bindCommon();
   $("bLimit").onclick=openTufe;
   $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
+  $("kMulk")&&($("kMulk").onclick=openMulkler);
   $("view").querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>{const k="o"+b.dataset.grp;ui[k]=!ui[k];const y=window.scrollY;render();window.scrollTo(0,y)});
   $("goT")&&($("goT").onclick=()=>{ui.tYM=curYM();go("tahsilat")});
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
@@ -798,6 +799,7 @@ function vKiracilar(){
   const q=ui.kQ.toLocaleLowerCase("tr");
   let list=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
   if(ui.kAy>=0)list=list.filter(k=>{const d=parseISO(k.giris);return d&&d.getMonth()===ui.kAy});
+  if(ui.kM)list=list.filter(k=>ui.kM==="__yok"?!k.mulkId:k.mulkId===ui.kM);
   if(q)list=list.filter(k=>(k.ad+" "+(mById(k.mulkId)?.ad||"")+" "+(k.tel||"")).toLocaleLowerCase("tr").includes(q));
   list.sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   const n={aktif:S.kiracilar.filter(isActive).length,borclu:S.kiracilar.filter(k=>isActive(k)&&balance(k)>0).length,eski:S.kiracilar.filter(k=>!isActive(k)).length};
@@ -805,6 +807,7 @@ function vKiracilar(){
   {const base=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
    const cnt=Array(12).fill(0);base.forEach(k=>{const d=parseISO(k.giris);if(d)cnt[d.getMonth()]++});
    h+=`<div class="sechd" style="margin-bottom:-6px"><h2>Zam ayı (giriş ayı)</h2>${ui.kAy>=0?`<button data-ay="-1">Temizle</button>`:""}</div><div class="chips"><button class="chip ${ui.kAy<0?"on":""}" data-ay="-1">Tüm aylar</button>${AYK.map((a,i)=>`<button class="chip ${ui.kAy===i?"on":""}" data-ay="${i}" ${cnt[i]?"":'style="opacity:.45"'}>${a}${cnt[i]?` <span class="num" style="opacity:.6">${cnt[i]}</span>`:""}</button>`).join("")}</div>`;}
+  if(S.mulkler.length)h+=`<div class="fld"><select id="kM" aria-label="Mülk filtresi"><option value="">Tüm mülkler</option>${opt(S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>[m.id,m.ad]),ui.kM||"")}<option value="__yok"${ui.kM==="__yok"?" selected":""}>Mülk seçilmemiş</option></select></div>`;
   h+=`<input class="search" id="kq" type="search" placeholder="İsim, mülk veya telefon ara" value="${esc(ui.kQ)}">`;
   if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?(ui.kAy>=0?`${AYLAR[ui.kAy]} ayında zammı olan kiracı yok.`:"Arama veya filtreyi değiştir."):"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
   else h+=`<div class="card list">${list.map(k=>{
@@ -819,6 +822,7 @@ function vKiracilar(){
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ui.kFilter=b.dataset.f;render()});
   $("view").querySelectorAll("[data-ay]").forEach(b=>b.onclick=()=>{ui.kAy=+b.dataset.ay;render()});
+  $("kM")&&($("kM").onchange=()=>{ui.kM=$("kM").value;render()});
   {const on=$("view").querySelector('.chip.on[data-ay]');if(on&&ui.kAy>=0)on.scrollIntoView({inline:"center",block:"nearest"})}
   const qi=$("kq");qi.oninput=()=>{ui.kQ=qi.value;const p=qi.selectionStart;render();const n=$("kq");n.focus();n.setSelectionRange(p,p)};
   $("addM").onclick=()=>openMulk();
@@ -860,6 +864,34 @@ function openKiraci(id){
   });
 }
 
+function openMulkler(){
+  const act=S.kiracilar.filter(isActive);
+  const info=m=>{const ks=act.filter(k=>k.mulkId===m.id),d=parseISO(m.dask),g=d?daysBetween(today(),d):null;
+    const daskSorun=!d?(m.tur!=="Arsa / diğer"):g<=30;
+    return{m,ks,kira:ks.reduce((t,k)=>t+(+k.kira||0),0),g,d,daskSorun,dask:!d?(m.tur==="Arsa / diğer"?"":"DASK girilmedi"):g<0?"DASK bitti":g<=30?`DASK ${g} gün`:""}};
+  const all=S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(info);
+  const F=[["tum","Tümü",()=>true],["dolu","Dolu",x=>x.ks.length],["bos","Boş",x=>!x.ks.length],["konut","Konut",x=>(x.m.tur||"Konut")==="Konut"],["isyeri","İş yeri",x=>x.m.tur==="İş yeri"],["dask","DASK uyarısı",x=>x.daskSorun]];
+  let f=ui.mF||"tum";
+  const occ=all.filter(x=>x.ks.length).length,top=all.reduce((t,x)=>t+x.kira,0);
+  const bagsiz=act.filter(k=>!k.mulkId).length;
+  sheet(`<h3>Mülklerim</h3><p class="sub">${all.length} mülk · ${occ} dolu · ${all.length-occ} boş</p>
+  ${all.length?`<div class="kpis"><div class="card kpi"><b class="num">%${Math.round(occ/all.length*100)}</b><span>Doluluk</span></div><div class="card kpi"><b class="num">${TL.format(top)}</b><span>Aylık kira toplamı</span></div></div>
+  <div class="chips" id="mfc" style="margin:0;padding:0">${F.map(([k,l,fn])=>{const n=all.filter(fn).length;return`<button class="chip" data-mf="${k}" ${n||k==="tum"?"":'style="opacity:.45"'}>${l} <span class="num" style="opacity:.6">${n}</span></button>`}).join("")}</div>
+  <div class="card list" id="mfl"></div>`:`<div class="card empty"><b>Henüz mülk yok</b>Daire, dükkân gibi mülklerini ekle; doluluk, DASK ve mülk bazında gelir-gider görünsün.</div>`}
+  ${bagsiz?`<p class="hint">${bagsiz} kiracı bir mülke bağlanmamış. Kiracı kartından "Düzenle" ile mülk seçebilirsin.</p>`:""}
+  <button class="btn pri" id="mAdd">${ic("plus",2)}Mülk ekle</button>`,(q,close,ov)=>{
+    const draw=()=>{
+      const list=all.filter(F.find(x=>x[0]===f)[2]);
+      ov.querySelectorAll("[data-mf]").forEach(b=>b.classList.toggle("on",b.dataset.mf===f));
+      const el=q("#mfl");if(!el)return;
+      el.innerHTML=list.length?list.map(x=>`<button class="item" data-m="${x.m.id}"><span class="av ${x.ks.length?"":"warn"}">${ic("building")}</span><span class="main"><b>${esc(x.m.ad)}</b><small style="white-space:normal">${esc(x.m.tur||"Konut")} · ${x.ks.length?esc(x.ks.map(k=>k.ad).join(", ")):"Boş"}${x.dask?` <span class="pill ${x.g!==null&&x.g<0?"p-bad":"p-warn"}">${esc(x.dask)}</span>`:""}</small></span><span class="side">${x.ks.length?`<b>${TL.format(x.kira)}</b><small>aylık</small>`:`<span class="pill p-warn">Boş</span>`}</span></button>`).join(""):`<div class="empty" style="padding:16px">Bu filtrede mülk yok.</div>`;
+      el.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{close();openMulk(b.dataset.m)});
+    };
+    ov.querySelectorAll("[data-mf]").forEach(b=>b.onclick=()=>{f=ui.mF=b.dataset.mf;draw()});
+    draw();
+    q("#mAdd").onclick=()=>{close();openMulk()};
+  });
+}
 function openMulk(id,onCreated,focusField){
   const m=id?mById(id):null,d=m||{};
   const kir=m?S.kiracilar.filter(k=>k.mulkId===m.id):[];
@@ -991,7 +1023,7 @@ function openPay(kid,ym){
   });
 }
 function openBulk(ym){
-  const rows=S.kiracilar.filter(k=>periods(k).includes(ym)&&periodState(k,ym).st!=="paid").sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const rows=S.kiracilar.filter(k=>periods(k).includes(ym)&&periodState(k,ym).st!=="paid"&&(!ui.tM||k.mulkId===ui.tM)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   sheet(`<h3>Toplu tahsilat</h3><p class="sub">${esc(ymLabel(ym))} kirası · ödeyenleri işaretle</p>
   <div class="card list" id="bl">${rows.map(k=>{const x=periodState(k,ym),r=x.due-x.paid;return`<label class="item" style="cursor:pointer"><input type="checkbox" data-k="${k.id}" data-t="${r}" checked style="width:22px;height:22px;accent-color:var(--ok);flex-shrink:0"><span class="main"><b>${esc(k.ad)}</b><small>${x.paid?`${TL.format(x.paid)} ödenmiş · kalan `:""}${TL.format(r)}${x.st==="late"||x.st==="partlate"?" · gecikti":""}</small></span><span class="side"><b>${TL.format(r)}</b></span></label>`}).join("")}</div>
   <div class="btns"><button class="btn sm" id="bAll">Hepsini seç</button><button class="btn sm" id="bNone">Hiçbirini seçme</button></div>
@@ -1145,9 +1177,10 @@ function openMessage(id,start){
 /* ================== TAHSİLAT ================== */
 function vTahsilat(){
   const ym=ui.tYM||curYM();
-  const rows=S.kiracilar.filter(k=>periods(k).includes(ym)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
-  const {exp,col}=monthTotals(ym);
+  const rows=S.kiracilar.filter(k=>periods(k).includes(ym)&&(!ui.tM||k.mulkId===ui.tM)).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  const {exp,col}=ui.tM?{exp:rows.reduce((t,k)=>t+rentAt(k,ym),0),col:S.odemeler.filter(o=>o.donem===ym&&rows.some(k=>k.id===o.kiraciId)).reduce((t,o)=>t+(+o.tutar||0),0)}:monthTotals(ym);
   let h=`<div class="monthnav"><button class="iconbtn" id="tPrev" aria-label="Önceki ay">${ic("left")}</button><b>${esc(ymLabel(ym))}</b><button class="iconbtn" id="tNext" aria-label="Sonraki ay" ${ym>=curYM()?"disabled style='opacity:.4'":""}>${ic("right")}</button></div>`;
+  if(S.mulkler.length)h+=`<div class="fld"><select id="tM" aria-label="Mülk filtresi"><option value="">Tüm mülkler</option>${opt(S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>[m.id,m.ad]),ui.tM||"")}</select></div>`;
   h+=`<div class="kpis"><div class="card kpi ok"><b class="num">${TL.format(col)}</b><span>Tahsil edilen</span></div><div class="card kpi ${exp-col>0?"bad":""}"><b class="num">${TL.format(Math.max(0,exp-col))}</b><span>Kalan · beklenen ${TL.format(exp)}</span></div></div>`;
   const acik=rows.filter(k=>periodState(k,ym).st!=="paid");
   if(acik.length>1)h+=`<button class="btn ok" id="bulk" style="width:100%">${ic("check",2)}Toplu tahsilat · ${acik.length} kiracı · ${TL.format(acik.reduce((t,k)=>{const x=periodState(k,ym);return t+x.due-x.paid},0))}</button>`;
@@ -1158,6 +1191,7 @@ function vTahsilat(){
   h+=`<section class="sec"><div class="sechd"><h2>${esc(AYLAR[+ym.slice(5)-1])} içinde alınan ödemeler</h2></div>${pays.length?`<div class="card list">${pays.map(payRow).join("")}</div>`:`<div class="card empty" style="padding:16px">Bu ay içinde girilmiş ödeme yok.</div>`}</section>`;
   $("view").innerHTML=h;
   $("bulk")&&($("bulk").onclick=()=>openBulk(ym));
+  $("tM")&&($("tM").onchange=()=>{ui.tM=$("tM").value;render()});
   $("tPrev").onclick=()=>{ui.tYM=addMonths(ym,-1);render()};
   $("tNext").onclick=()=>{if(ym<curYM()){ui.tYM=addMonths(ym,1);render()}};
   bindCommon();
