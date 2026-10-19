@@ -233,7 +233,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.4.0";
+const VERSION="1.4.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -299,7 +299,14 @@ function save(){saveLocal();cloudPush()}
 /* ================== BULUT (Firebase) ==================
    Yapı: users/{uid}/{mulkler|kiracilar|odemeler|giderler}/{id} ve users/{uid}/meta/ayar
    Telefondaki kopya her zaman tutulur; giriş yapılmışsa her değişiklik buluta da yazılır. */
-const FIREBASE_CONFIG=null;
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyCIhkXR5fNmEoYQHigFPp3tvIXi0Ut3YLg",
+  authDomain:"kira-defteri-5c6f6.firebaseapp.com",
+  projectId:"kira-defteri-5c6f6",
+  storageBucket:"kira-defteri-5c6f6.firebasestorage.app",
+  messagingSenderId:"537794896090",
+  appId:"1:537794896090:web:5d20507d1af3974aa745e3"
+};
 const COLS=["mulkler","kiracilar","odemeler","giderler"];
 const SYNC_AYAR=["ad","tel","iban","tufe","tema"];
 const CLOUD={on:false,api:null,user:null,ready:false,last:{},pending:false,err:"",unsubs:[],seen:{}};
