@@ -909,7 +909,7 @@ function openSettings(){
   <p class="hint" style="margin-top:-4px">Tüm kayıtlar sadece bu telefonda saklanır. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder.${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
   <div class="btns grow"><button class="btn pri" id="sBak">Yedek al</button><button class="btn" id="sRes">Yedekten yükle</button></div>
   <div class="btns grow"><button class="btn" id="sImp">Excel'den kiracı aktar</button><button class="btn" id="sTpl">Excel şablonu</button></div>
-  <input type="file" id="fRes" accept=".json,application/json" hidden><input type="file" id="fImp" accept=".xlsx,.xls,.csv" hidden></div>
+  <input type="file" id="fRes" hidden><input type="file" id="fImp" accept=".xlsx,.xls,.csv" hidden></div>
 
   <div class="sec"><div class="sechd"><h2>Uygulama</h2></div>
   ${standalone()?`<div class="banner info">${ic("check",2)}<span>Uygulama ana ekrana kurulu.</span></div>`:deferredInstall?`<button class="btn pri" id="sInst">Ana ekrana kur</button>`:`<div class="banner info"><span>${ios?"Ana ekrana eklemek için Safari'de alttaki Paylaş düğmesine, sonra <b>Ana Ekrana Ekle</b>'ye dokun.":"Ana ekrana eklemek için Chrome menüsünden (⋮) <b>Ana ekrana ekle</b> veya <b>Uygulamayı yükle</b>'yi seç."}</span></div>`}
