@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.8.0";
+const VERSION="1.8.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -588,27 +588,23 @@ function anniversary(k){
   const y=NOW.getFullYear();let a=new Date(y,g.getMonth(),g.getDate());
   return a;
 }
-function raiseInfo(k){
-  /* yıldönümüne 45 gün kala ya da geçtiyse bu yıl zam yapılmamışsa uyar */
-  const g=sozBas(k);if(!g||!isActive(k))return null;
-  const y=NOW.getFullYear();if(g.getFullYear()>=y)return null;
-  const a=new Date(y,g.getMonth(),g.getDate());const d=daysBetween(today(),a);
-  const done=(k.gecmis||[]).some(h=>h.tarih.slice(0,4)===String(y));
-  if(done)return null;
-  if(d<=45&&d>=-60)return{tarih:a,gun:d};
-  return null;
-}
+/* zam takvimi: her yıl ya da (sözleşmede öyle kararlaştırıldıysa) sözleşme süresi dolunca */
+const zamAralik=k=>k.zamPer==="sozlesme"?Math.max(1,+k.sure||1):1;
 function nextRaise(k){
-  /* bu yılki yıldönümü geçtiyse ve zam girilmediyse 60 güne kadar "gecikti" sayılır, yoksa bir sonraki yıldönümü */
   const g=sozBas(k);if(!g||!isActive(k))return null;
-  const y=NOW.getFullYear();let a=new Date(y,g.getMonth(),g.getDate());
-  const done=(k.gecmis||[]).some(h=>h.tarih.slice(0,4)===String(y));
-  const d=daysBetween(today(),a);
-  if(a.getFullYear()<=g.getFullYear())a=new Date(g.getFullYear()+1,g.getMonth(),g.getDate());
-  else if(d<0&&(done||d<-60))a=new Date(y+1,g.getMonth(),g.getDate());
-  else if(d>=0&&done)a=new Date(y+1,g.getMonth(),g.getDate());
+  const P=zamAralik(k),t=today();
+  const at=n=>new Date(g.getFullYear()+n*P,g.getMonth(),g.getDate());
+  const doneNear=a=>(k.gecmis||[]).some(h=>{const d=parseISO(h.tarih);return d&&daysBetween(a,d)>=-60&&d<=t});
+  let n=1;while(at(n)<=t&&n<200)n++;
+  const past=n>1?at(n-1):null;
+  let a;
+  if(past&&daysBetween(past,t)<=60&&!doneNear(past))a=past;          // zam günü geçti, zam girilmedi: gecikti
+  else{a=at(n);if(daysBetween(t,a)<=60&&doneNear(a))a=at(n+1)}        // erken yapılmışsa bir sonrakine geç
   const last=(k.gecmis||[]).slice().sort((x,z)=>z.tarih.localeCompare(x.tarih))[0];
-  return{tarih:a,gun:daysBetween(today(),a),last};
+  return{tarih:a,gun:daysBetween(t,a),last,P};
+}
+function raiseInfo(k){
+  const r=nextRaise(k);return r&&r.gun<=45?{tarih:r.tarih,gun:r.gun}:null;
 }
 function contractInfo(k){
   const g=sozBas(k),ilk=parseISO(k.sureBas)||parseISO(k.giris)||g;if(!g||!isActive(k))return null;
@@ -727,7 +723,7 @@ function vOzet(){
   if(zr.length){
     const yakin=zr.filter(x=>x.r.gun<=60),show=ui.zAll?zr:yakin.slice(0,3);
     h+=`<section class="sec"><div class="sechd"><h2>${ui.zAll?"Zam takvimi":"Yaklaşan zamlar"}</h2><button id="zAll">${ui.zAll?"Daralt":`Tümü (${zr.length})`}</button></div>`;
-    if(!show.length){const n=zr[0];h+=`<div class="card banner" style="background:var(--surface)">${ic("up")}<span>Önümüzdeki 60 günde zam yok. Sıradaki: <b>${esc(n.k.ad)}</b>, ${esc(fmtDate(toISO(n.r.tarih)))}.</span></div>`}
+    if(!show.length){const n=zr[0];h+=`<div class="card banner" style="background:var(--surface)">${ic("up")}<span>Önümüzdeki 60 gün içinde zammı gelen kiracı yok. Sıradaki zam: <b>${esc(n.k.ad)}</b>, ${esc(fmtDate(toISO(n.r.tarih)))}.</span></div>`}
     else h+=`<div class="card list">${show.map(({k,r})=>{
       const max=Math.floor((k.kira||0)*(1+L.tufe/100));
       const cls=r.gun<0?"bad":r.gun<=60?"warn":"mute";
@@ -862,6 +858,7 @@ function openKiraci(id){
   <div class="fld"><label for="fMulk">Mülk</label><select id="fMulk"><option value="">Seçilmedi</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),d.mulkId||"")}<option value="__new">+ Yeni mülk ekle…</option></select></div>
   <div class="g2"><div class="fld"><label for="fGiris">Giriş tarihi</label><input id="fGiris" type="date" value="${esc(d.giris||todayISO())}"></div>
   <div class="fld"><label for="fSure">Sözleşme süresi</label><select id="fSure">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(d.sure||1))}</select></div></div>
+  <div class="fld"><label for="fZP">Kira artışı</label><select id="fZP">${opt([["yillik","Her yıl (sözleşme yıldönümünde)"],["sozlesme","Sözleşme süresi dolunca"]],d.zamPer||"yillik")}</select></div>
   <div class="fld"><label for="fSoz">Güncel sözleşme başlangıcı</label><input id="fSoz" type="date" value="${esc(d.sozBas||d.giris||"")}"><p class="hint" style="margin-top:2px">Sözleşmeyi sonradan yenilediyseniz yeni sözleşmenin tarihini yaz. Zamlar bu tarihe göre hesaplanır; değilse giriş tarihiyle aynı bırak.</p></div>
   <div class="g2"><div class="fld"><label for="fKira">Aylık kira (₺)</label><input id="fKira" class="tl" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
   <div class="fld"><label for="fGun">Ödeme günü</label><input id="fGun" inputmode="numeric" value="${esc(d.odemeGunu||"")}" placeholder="Giriş günü"></div></div>
@@ -880,7 +877,7 @@ function openKiraci(id){
       const gun=parseInt(q("#fGun").value,10);
       const mulk=q("#fMulk").value==="__new"?"":q("#fMulk").value;
       const sbv=q("#fSoz")?q("#fSoz").value:"";
-      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO()}),...(sbv&&sbv!==giris?{sozBas:sbv}:{sozBas:""}),ad,tel:q("#fTel").value.trim(),tc:q("#fTc").value.trim(),mulkId:mulk,giris,sure:+q("#fSure").value,kira,odemeGunu:gun>=1&&gun<=31?gun:"",depozito:parseMoney(q("#fDep").value)||"",takipBas:q("#fTakip").value||curYM(),not:q("#fNot").value.trim()};
+      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO()}),zamPer:q("#fZP").value,...(sbv&&sbv!==giris?{sozBas:sbv}:{sozBas:""}),ad,tel:q("#fTel").value.trim(),tc:q("#fTc").value.trim(),mulkId:mulk,giris,sure:+q("#fSure").value,kira,odemeGunu:gun>=1&&gun<=31?gun:"",depozito:parseMoney(q("#fDep").value)||"",takipBas:q("#fTakip").value||curYM(),not:q("#fNot").value.trim()};
       if(k)Object.assign(k,rec);else S.kiracilar.push(rec);
       save();close();render();toast(k?"Güncellendi":"Kiracı eklendi");
       if(k)refreshDetail(k.id);
@@ -968,7 +965,7 @@ function openDetail(id){
     <dt>Telefon</dt><dd>${esc(k.tel||"—")}</dd>
     ${k.tc?`<dt>TC no</dt><dd>${esc(k.tc)}</dd>`:""}
     <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
-    ${k.sozBas&&k.sozBas!==k.giris?`<dt>Güncel sözleşme</dt><dd>${esc(fmtDate(k.sozBas))} · ${+k.sure||1} yıl</dd>`:""}
+    ${k.sozBas&&k.sozBas!==k.giris?`<dt>Güncel sözleşme</dt><dd>${esc(fmtDate(k.sozBas))} · ${+k.sure||1} yıl</dd>`:""}<dt>Kira artışı</dt><dd>${k.zamPer==="sozlesme"?`Sözleşme sonunda (${+k.sure||1} yılda bir)`:"Her yıl"}</dd>
     ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))} ${c.uzama?"(kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${k.sureBas?`<small style="color:var(--muted)">${esc(fmtShortDate(k.sureBas))}'den · </small>`:""}${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
     <dt>Depozito</dt><dd>${k.depozito?TL.format(k.depozito):"—"}</dd>
@@ -1189,6 +1186,7 @@ function openSozlesme(id){
   sheet(`<h3>Yeni sözleşme</h3><p class="sub">${esc(k.ad)} · ilk giriş ${esc(fmtDate(k.giris))}</p>
   <div class="g2"><div class="fld"><label for="sB">Yeni sözleşme başlangıcı</label><input id="sB" type="date" value="${todayISO()}"></div>
   <div class="fld"><label for="sS">Süre</label><select id="sS">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(k.sure||1))}</select></div></div>
+  <div class="fld"><label for="sZP">Kira artışı</label><select id="sZP">${opt([["yillik","Her yıl (sözleşme yıldönümünde)"],["sozlesme","Sözleşme süresi dolunca"]],k.zamPer||"yillik")}</select></div>
   <div class="g2"><div class="fld"><label for="sK">Yeni aylık kira (₺)</label><input id="sK" class="tl" inputmode="decimal" value="${esc(fmtInput(eski))}"></div>
   <div class="fld"><label for="sG">Ödeme günü</label><input id="sG" inputmode="numeric" value="${esc(k.odemeGunu||"")}" placeholder="Değişmedi"></div></div>
   <div class="fld"><label for="sD">Depozito (₺)</label><input id="sD" class="tl" inputmode="decimal" value="${esc(fmtInput(k.depozito))}"></div>
@@ -1206,7 +1204,7 @@ function openSozlesme(id){
       if(!k.sozlesmeler.length)k.sozlesmeler.push({tarih:k.sozBas||k.giris,sure:+k.sure||1,kira:(k.gecmis||[]).length?+(k.gecmis.slice().sort((a,b)=>a.tarih.localeCompare(b.tarih))[0].eski):eski,not:"İlk sözleşme"});
       k.sozlesmeler.push({tarih:t,sure,kira:y,not:q("#sN").value.trim()});
       if(y!==eski){k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0,tur:"sozlesme"});k.kira=y}
-      k.sozBas=t;k.sure=sure;
+      k.sozBas=t;k.sure=sure;k.zamPer=q("#sZP").value;
       if(q("#sReset").checked)k.sureBas=t;else delete k.sureBas;
       const g=parseInt(q("#sG").value,10);if(g>=1&&g<=31)k.odemeGunu=g;
       const dep=parseMoney(q("#sD").value);k.depozito=dep||"";
