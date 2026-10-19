@@ -39,7 +39,7 @@
 html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.45;-webkit-text-size-adjust:100%}
 body{min-height:100vh;min-height:100dvh;overscroll-behavior-y:none}
 button,input,select,textarea{font:inherit;color:inherit}
-button{cursor:pointer}
+button{cursor:pointer;touch-action:manipulation}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .num{font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
@@ -191,7 +191,7 @@ tfoot td{font-weight:700;border-bottom:0}
 .dots.shake{animation:sh .35s}
 @keyframes sh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 .pad3{display:grid;grid-template-columns:repeat(3,72px);gap:14px}
-.pad3 button{height:72px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:26px;font-weight:500}
+.pad3 button{touch-action:manipulation;user-select:none;-webkit-user-select:none;height:72px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:26px;font-weight:500}
 .pad3 button.t{border:0;background:none;font-size:15px;color:var(--brand);font-weight:600}
 
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 80px);z-index:60;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:90vw;text-align:center}
@@ -226,7 +226,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.0.0";
+const VERSION="1.0.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -1026,8 +1026,8 @@ function pinPad(title,onDone,cancelable){
   el.innerHTML=`<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h2 id="lt">${esc(title)}</h2><div class="dots" id="ld">${"<i></i>".repeat(4)}</div><div class="pad3">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-n="${n}">${n}</button>`).join("")}<button class="t" data-x="c">${cancelable?"Vazgeç":""}</button><button data-n="0">0</button><button class="t" data-x="b">Sil</button></div>`;
   document.body.appendChild(el);
   const dots=()=>el.querySelectorAll("#ld i").forEach((d,i)=>d.classList.toggle("f",i<v.length));
-  const api={el,reset(msg){v="";dots();if(msg)el.querySelector("#lt").textContent=msg;const d=el.querySelector("#ld");d.classList.remove("shake");void d.offsetWidth;d.classList.add("shake")},close(){el.remove();document.removeEventListener("keydown",kd)}};
-  const press=n=>{if(v.length>=4)return;v+=n;dots();if(v.length===4){const p=v;setTimeout(()=>onDone(p,api),120)}};
+  const api={el,reset(msg,ok){if(!ok){v="";dots()}if(msg)el.querySelector("#lt").textContent=msg;el.querySelector("#lt").style.color=ok?"":"var(--bad)";if(ok)return;const d=el.querySelector("#ld");d.classList.remove("shake");void d.offsetWidth;d.classList.add("shake");if(navigator.vibrate)navigator.vibrate(120)},close(){el.remove();document.removeEventListener("keydown",kd)}};
+  const press=n=>{if(v.length>=4)return;v+=n;dots();if(v.length===4){const p=v;v="";setTimeout(dots,150);onDone(p,api)}};
   el.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>press(b.dataset.n));
   el.querySelector('[data-x="b"]').onclick=()=>{v=v.slice(0,-1);dots()};
   el.querySelector('[data-x="c"]').onclick=()=>{if(cancelable)api.close()};
@@ -1042,12 +1042,12 @@ function lockIfNeeded(){
   pinPad("PIN gir",async(p,api)=>{if(await hashPin(p)===S.ayar.pinHash){api.close();locked=false}else api.reset("Yanlış PIN, tekrar dene")},false);
 }
 function openPinSetup(){
-  const setNew=()=>{let first="";pinPad("Yeni 4 haneli PIN",async(p,api)=>{
-    if(!first){first=p;api.reset("PIN'i tekrar gir");return}
+  const setNew=()=>{let first="";pinPad("Yeni PIN belirle (4 hane)",async(p,api)=>{
+    if(!first){first=p;api.reset("Aynı PIN'i tekrar gir",true);return}
     if(p!==first){first="";api.reset("Eşleşmedi, baştan gir");return}
     S.ayar.pinHash=await hashPin(p);save();api.close();toast("PIN kilidi açıldı");
   },true)};
-  if(!S.ayar.pinHash){setNew();return}
+  if(!S.ayar.pinHash){confirmSheet("PIN kilidi açılsın mı?","Açarsan uygulama her açılışta 4 haneli bir şifre sorar. Şifreyi unutursan sadece yedekten geri dönebilirsin. İstemiyorsan Vazgeç'e bas.","PIN belirle",false).then(ok=>{if(ok)setNew()});return}
   sheet(`<h3>PIN kilidi</h3><p class="hint">PIN'i unutursan uygulamaya giremezsin; o durumda tarayıcı verisini silip yedekten yüklemen gerekir.</p><div class="btns grow"><button class="btn" id="pc">PIN'i değiştir</button><button class="btn danger" id="po">Kilidi kapat</button></div>`,(q,close)=>{
     q("#pc").onclick=()=>{close();pinPad("Mevcut PIN",async(p,api)=>{if(await hashPin(p)!==S.ayar.pinHash){api.reset("Yanlış PIN");return}api.close();setNew()},true)};
     q("#po").onclick=()=>{close();pinPad("Mevcut PIN",async(p,api)=>{if(await hashPin(p)!==S.ayar.pinHash){api.reset("Yanlış PIN");return}S.ayar.pinHash="";save();api.close();toast("PIN kilidi kapatıldı")},true)};
