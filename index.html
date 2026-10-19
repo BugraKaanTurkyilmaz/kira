@@ -226,7 +226,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.2.0";
+const VERSION="1.3.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -448,7 +448,7 @@ function opt(list,val){return list.map(x=>{const[v,l]=Array.isArray(x)?x:[x,x];r
 /* ================== yönlendirme ================== */
 const TABS=[["ozet","Özet","home"],["kiracilar","Kiracılar","users"],["tahsilat","Tahsilat","wallet"],["giderler","Giderler","receipt"],["rapor","Rapor","chart"]];
 let tab="ozet";
-const ui={kFilter:"aktif",kQ:"",tYM:null,gYM:null,rYil:null,gMulk:""};
+const ui={zAll:false,kAy:-1,gAy:-1,kFilter:"aktif",kQ:"",tYM:null,gYM:null,rYil:null,gMulk:""};
 function go(t){tab=t;try{sessionStorage.setItem("tab",t)}catch(e){}render();window.scrollTo(0,0)}
 function renderNav(){$("nav").innerHTML=TABS.map(([k,l,i])=>`<button data-t="${k}" class="${tab===k?"on":""}" aria-label="${l}">${ic(i)}<span>${l}</span></button>`).join("");$("nav").querySelectorAll("button").forEach(b=>b.onclick=()=>go(b.dataset.t))}
 function setFab(label,fn){const f=$("fab");if(!label){f.hidden=true;return}f.hidden=false;f.innerHTML=ic("plus",2.2)+esc(label);f.onclick=fn}
@@ -486,6 +486,20 @@ function vOzet(){
   </div>`;
   h+=`<button class="card limit ${stale?"stale":""}" id="bLimit" style="text-align:left;width:100%"><span class="pct">%${PCT.format(L.tufe)}</span><span class="txt"><b>Yasal kira artış sınırı</b>${stale?`${esc(ymLabel(L.tufeAy))} oranı. Yeni oran henüz gelmedi.`:`${esc(ymLabel(L.tufeAy))} · 12 aylık TÜFE ortalaması${L.src==="oto"?" · otomatik":""}`}</span>${ic("right")}</button>`;
 
+  /* yaklaşan zamlar */
+  const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
+  if(zr.length){
+    const yakin=zr.filter(x=>x.r.gun<=60),show=ui.zAll?zr:yakin;
+    h+=`<section class="sec"><div class="sechd"><h2>${ui.zAll?"Zam takvimi":"Yaklaşan zamlar"}</h2><button id="zAll">${ui.zAll?"Sadece yaklaşanlar":`Tümü (${zr.length})`}</button></div>`;
+    if(!show.length){const n=zr[0];h+=`<div class="card banner" style="background:var(--surface)">${ic("up")}<span>Önümüzdeki 60 günde zam yok. Sıradaki: <b>${esc(n.k.ad)}</b>, ${esc(fmtDate(toISO(n.r.tarih)))}.</span></div>`}
+    else h+=`<div class="card list">${show.map(({k,r})=>{
+      const max=Math.floor((k.kira||0)*(1+L.tufe/100));
+      const cls=r.gun<0?"bad":r.gun<=60?"warn":"mute";
+      const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":r.gun<=60?`${r.gun} gün kaldı`:fmtShortDate(toISO(r.tarih));
+      return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm ${r.gun<=60?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div>`;
+    h+=`</section>`;
+  }
+
   /* yapılacaklar */
   const todo=[];
   for(const k of act){
@@ -497,7 +511,6 @@ function vOzet(){
     const d=new Date(NOW.getFullYear(),NOW.getMonth(),Math.min(payDay(k),28)),g=daysBetween(today(),d);
     if(g>=0&&g<=7)todo.push({o:1,k,cls:"warn",t:g===0?"Ödeme günü bugün":`${g} gün sonra ödeme günü`,s:`${TL.format(ps.due-ps.paid)} · ${fmtShort(d)}`,a:"pay"});
   }
-  for(const k of act){const r=raiseInfo(k);if(r)todo.push({o:2,k,cls:"info",t:r.gun<0?"Zam zamanı geçti":r.gun===0?"Zam günü bugün":`${r.gun} gün sonra zam`,s:`Yıldönümü ${fmtShort(r.tarih)} · sınır %${PCT.format(L.tufe)}`,a:"raise"})}
   for(const k of act){const c=contractInfo(k);if(c&&c.gun<=60&&(!c.uzama||c.on))todo.push({o:3,k,cls:"mute",t:`Sözleşme ${c.gun} gün sonra ${c.uzama?"yenileniyor":"doluyor"}`,s:fmtDate(toISO(c.bitis))+(c.on?" · 10 yıl doldu":""),a:"open"})}
   for(const m of S.mulkler){
     for(const [f,ad] of [["dask","DASK"],["sigorta","Konut sigortası"]]){
@@ -519,17 +532,9 @@ function vOzet(){
   todo.sort((a,b)=>a.o-b.o);
   h+=`<section class="sec"><div class="sechd"><h2>Yapılacaklar</h2></div>`;
   if(!S.kiracilar.length)h+="";
-  else if(!todo.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Her şey yolunda. Gecikmiş ödeme, yaklaşan zam veya biten sigorta yok.</span></div>`;
+  else if(!todo.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Her şey yolunda. Gecikmiş ödeme veya biten sigorta yok.</span></div>`;
   else h+=`<div class="card list">${todo.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av ${x.cls==="info"?"":x.cls==="mute"?"":x.cls}">${x.a==="raise"?ic("up"):x.a==="open"?ic("doc"):initials(x.k.ad)}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="pay"?`<button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button>`:x.a==="raise"?`<button class="btn sm pri" data-raise="${x.k.id}">Zam</button>`:""}</span></div>`).join("")}</div>`;
   h+=`</section>`;
-
-  /* zam takvimi */
-  const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
-  if(zr.length)h+=`<section class="sec"><div class="sechd"><h2>Zam takvimi</h2><button id="bTufe2">Sınır %${PCT.format(L.tufe)}</button></div><div class="card list">${zr.map(({k,r})=>{
-    const max=Math.floor((k.kira||0)*(1+L.tufe/100));
-    const cls=r.gun<0?"bad":r.gun<=45?"warn":"mute";
-    const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":r.gun<=45?`${r.gun} gün kaldı`:fmtShortDate(toISO(r.tarih));
-    return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm ${r.gun<=45?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div></section>`;
 
   /* son hareketler */
   const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0)).slice(0,5);
@@ -537,7 +542,7 @@ function vOzet(){
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
-  $("bTufe2")&&($("bTufe2").onclick=openTufe);
+  $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
   $("view").querySelectorAll("[data-renew]").forEach(b=>b.onclick=()=>openMulk(b.dataset.renew,null,b.dataset.f));
   $("view").querySelectorAll("[data-tax]").forEach(b=>b.onclick=()=>openGider(null,{tur:"Emlak vergisi",mulkId:b.dataset.tax}));
@@ -561,12 +566,16 @@ function bindCommon(){
 function vKiracilar(){
   const q=ui.kQ.toLocaleLowerCase("tr");
   let list=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
+  if(ui.kAy>=0)list=list.filter(k=>{const d=parseISO(k.giris);return d&&d.getMonth()===ui.kAy});
   if(q)list=list.filter(k=>(k.ad+" "+(mById(k.mulkId)?.ad||"")+" "+(k.tel||"")).toLocaleLowerCase("tr").includes(q));
   list.sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   const n={aktif:S.kiracilar.filter(isActive).length,borclu:S.kiracilar.filter(k=>isActive(k)&&balance(k)>0).length,eski:S.kiracilar.filter(k=>!isActive(k)).length};
   let h=`<div class="seg" role="tablist">${[["aktif","Aktif"],["borclu","Borçlu"],["eski","Çıkanlar"]].map(([k,l])=>`<button data-f="${k}" class="${ui.kFilter===k?"on":""}">${l} <span class="num" style="opacity:.6">${n[k]}</span></button>`).join("")}</div>`;
+  {const base=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
+   const cnt=Array(12).fill(0);base.forEach(k=>{const d=parseISO(k.giris);if(d)cnt[d.getMonth()]++});
+   h+=`<div class="sechd" style="margin-bottom:-6px"><h2>Zam ayı (giriş ayı)</h2>${ui.kAy>=0?`<button data-ay="-1">Temizle</button>`:""}</div><div class="chips"><button class="chip ${ui.kAy<0?"on":""}" data-ay="-1">Tüm aylar</button>${AYK.map((a,i)=>`<button class="chip ${ui.kAy===i?"on":""}" data-ay="${i}" ${cnt[i]?"":'style="opacity:.45"'}>${a}${cnt[i]?` <span class="num" style="opacity:.6">${cnt[i]}</span>`:""}</button>`).join("")}</div>`;}
   h+=`<input class="search" id="kq" type="search" placeholder="İsim, mülk veya telefon ara" value="${esc(ui.kQ)}">`;
-  if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?"Arama veya filtreyi değiştir.":"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
+  if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?(ui.kAy>=0?`${AYLAR[ui.kAy]} ayında zammı olan kiracı yok.`:"Arama veya filtreyi değiştir."):"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
   else h+=`<div class="card list">${list.map(k=>{
     const b=balance(k),m=mById(k.mulkId),ps=isActive(k)?periodState(k,curYM()):null;
     let pill=!isActive(k)?`<span class="pill p-mute">Çıktı ${esc(fmtShortDate(k.cikis))}</span>`:b>0?`<span class="pill p-bad">${TL.format(b)} borç</span>`:ps&&ps.st==="paid"?`<span class="pill p-ok">Bu ay ödendi</span>`:`<span class="pill p-info">Ödeme günü ${payDay(k)}</span>`;
@@ -578,6 +587,8 @@ function vKiracilar(){
   h+=`</section>`;
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ui.kFilter=b.dataset.f;render()});
+  $("view").querySelectorAll("[data-ay]").forEach(b=>b.onclick=()=>{ui.kAy=+b.dataset.ay;render()});
+  {const on=$("view").querySelector('.chip.on[data-ay]');if(on&&ui.kAy>=0)on.scrollIntoView({inline:"center",block:"nearest"})}
   const qi=$("kq");qi.oninput=()=>{ui.kQ=qi.value;const p=qi.selectionStart;render();const n=$("kq");n.focus();n.setSelectionRange(p,p)};
   $("addM").onclick=()=>openMulk();
   $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
@@ -711,12 +722,13 @@ function openPay(kid,ym){
   <div class="g2"><div class="fld"><label for="pD">Hangi ayın kirası</label><input id="pD" type="month"></div>
   <div class="fld"><label for="pT">Tutar (₺)</label><input id="pT" inputmode="decimal"></div></div>
   <p class="hint" id="pInfo"></p>
+  <label class="banner info" id="pAllW" style="cursor:pointer" hidden><input type="checkbox" id="pAll" style="width:20px;height:20px;accent-color:var(--brand)"><span id="pAllT"></span></label>
   <div class="g2"><div class="fld"><label for="pTar">Ödeme tarihi</label><input id="pTar" type="date" value="${todayISO()}"></div>
   <div class="fld"><label for="pY">Yöntem</label><select id="pY">${opt(YONTEM,"Havale / EFT")}</select></div></div>
   <div class="fld"><label for="pN">Not</label><input id="pN" placeholder="İsteğe bağlı"></div>
   <p class="err" id="pErr"></p>
   <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn ok" id="pSave">Kaydet</button></div>`,(q,close)=>{
-    const fill=(setYm)=>{
+    let fill=(setYm)=>{
       k=kById(q("#pK").value);
       if(setYm)q("#pD").value=setYm;
       const d=q("#pD").value||curYM(),s=periodState(k,d);
@@ -724,10 +736,19 @@ function openPay(kid,ym){
       q("#pT").value=fmtInput(rest||s.due);
       q("#pInfo").textContent=`${ymLabel(d)} kirası ${TL.format(s.due)}${s.paid?`, şimdiye kadar ${TL.format(s.paid)} ödendi`:""}. Toplam gecikmiş borç: ${TL.format(balance(k))}.`;
     };
+    const openMonths=k=>periods(k).filter(x=>{const t=periodState(k,x).st;return t==="late"||t==="partlate"||(x===curYM()&&t!=="paid")});
+    const allInfo=()=>{const om=openMonths(k);q("#pAllW").hidden=om.length<2;q("#pAll").checked=false;q("#pAllT").textContent=`Açık ${om.length} ayın hepsini tek seferde kapat (${om.map(ymShort).join(", ")}) · ${TL.format(om.reduce((t,x)=>{const z=periodState(k,x);return t+z.due-z.paid},0))}`;};
+    const _fill=fill;fill=(v)=>{_fill(v);allInfo()};
+    q("#pAll").onchange=()=>{const on=q("#pAll").checked;q("#pD").disabled=on;q("#pT").disabled=on};
     fill(ym||firstOpen(k));
     q("#pK").onchange=()=>fill(firstOpen(kById(q("#pK").value)));
     q("#pD").onchange=()=>fill();
     q("#pSave").onclick=()=>{
+      if(q("#pAll").checked){
+        const tar=q("#pTar").value||todayISO();let n=nextReceiptNo(),c=0,sum=0;
+        for(const x of openMonths(k)){const z=periodState(k,x),r=z.due-z.paid;if(r<=0)continue;S.odemeler.push({id:uid(),kiraciId:k.id,donem:x,tutar:r,tarih:tar,yontem:q("#pY").value,not:q("#pN").value.trim(),ts:Date.now(),no:n++});c++;sum+=r}
+        save();close();render();refreshDetail(k.id);toast(`${c} ay kapatıldı · ${TL.format(sum)}`);return;
+      }
       const t=parseMoney(q("#pT").value),d=q("#pD").value,tar=q("#pTar").value;
       if(!(t>0)){q("#pErr").textContent="Tutarı yaz.";return}
       if(!d||!tar){q("#pErr").textContent="Ay ve tarih gerekli.";return}
@@ -735,6 +756,26 @@ function openPay(kid,ym){
       S.odemeler.push(o);save();close();render();refreshDetail(k.id);
       toast("Tahsilat kaydedildi");
       openReceipt(o.id);
+    };
+  });
+}
+function openBulk(ym){
+  const rows=S.kiracilar.filter(k=>periods(k).includes(ym)&&periodState(k,ym).st!=="paid").sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
+  sheet(`<h3>Toplu tahsilat</h3><p class="sub">${esc(ymLabel(ym))} kirası · ödeyenleri işaretle</p>
+  <div class="card list" id="bl">${rows.map(k=>{const x=periodState(k,ym),r=x.due-x.paid;return`<label class="item" style="cursor:pointer"><input type="checkbox" data-k="${k.id}" data-t="${r}" checked style="width:22px;height:22px;accent-color:var(--ok);flex-shrink:0"><span class="main"><b>${esc(k.ad)}</b><small>${x.paid?`${TL.format(x.paid)} ödenmiş · kalan `:""}${TL.format(r)}${x.st==="late"||x.st==="partlate"?" · gecikti":""}</small></span><span class="side"><b>${TL.format(r)}</b></span></label>`}).join("")}</div>
+  <div class="btns"><button class="btn sm" id="bAll">Hepsini seç</button><button class="btn sm" id="bNone">Hiçbirini seçme</button></div>
+  <div class="g2"><div class="fld"><label for="bTar">Ödeme tarihi</label><input id="bTar" type="date" value="${todayISO()}"></div><div class="fld"><label for="bY">Yöntem</label><select id="bY">${opt(YONTEM,"Havale / EFT")}</select></div></div>
+  <div class="calc"><span id="bN"></span><b id="bT"></b></div>
+  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn ok" id="bSave">Kaydet</button></div>`,(q,close,ov)=>{
+    const boxes=[...ov.querySelectorAll("#bl input")];
+    const upd=()=>{const on=boxes.filter(b=>b.checked);q("#bN").textContent=`${on.length} kiracı`;q("#bT").textContent=TL.format(on.reduce((t,b)=>t+ +b.dataset.t,0));q("#bSave").disabled=!on.length};
+    boxes.forEach(b=>b.onchange=upd);upd();
+    q("#bAll").onclick=()=>{boxes.forEach(b=>b.checked=true);upd()};
+    q("#bNone").onclick=()=>{boxes.forEach(b=>b.checked=false);upd()};
+    q("#bSave").onclick=()=>{
+      const tar=q("#bTar").value||todayISO(),y=q("#bY").value;let n=nextReceiptNo(),c=0;
+      boxes.filter(b=>b.checked).forEach(b=>{S.odemeler.push({id:uid(),kiraciId:b.dataset.k,donem:ym,tutar:+b.dataset.t,tarih:tar,yontem:y,not:"Toplu tahsilat",ts:Date.now(),no:n++});c++});
+      save();close();render();toast(`${c} tahsilat kaydedildi`);
     };
   });
 }
@@ -824,12 +865,15 @@ function vTahsilat(){
   const {exp,col}=monthTotals(ym);
   let h=`<div class="monthnav"><button class="iconbtn" id="tPrev" aria-label="Önceki ay">${ic("left")}</button><b>${esc(ymLabel(ym))}</b><button class="iconbtn" id="tNext" aria-label="Sonraki ay" ${ym>=curYM()?"disabled style='opacity:.4'":""}>${ic("right")}</button></div>`;
   h+=`<div class="kpis"><div class="card kpi ok"><b class="num">${TL.format(col)}</b><span>Tahsil edilen</span></div><div class="card kpi ${exp-col>0?"bad":""}"><b class="num">${TL.format(Math.max(0,exp-col))}</b><span>Kalan · beklenen ${TL.format(exp)}</span></div></div>`;
+  const acik=rows.filter(k=>periodState(k,ym).st!=="paid");
+  if(acik.length>1)h+=`<button class="btn ok" id="bulk" style="width:100%">${ic("check",2)}Toplu tahsilat · ${acik.length} kiracı · ${TL.format(acik.reduce((t,k)=>{const x=periodState(k,ym);return t+x.due-x.paid},0))}</button>`;
   if(!rows.length)h+=`<div class="card empty"><b>Bu ay için kayıt yok</b>Bu ayda takipte olan kiracı bulunmuyor.</div>`;
   else h+=`<div class="card list">${rows.map(k=>{const s=periodState(k,ym);const map={paid:["ok","Ödendi","p-ok"],part:["warn","Kısmi","p-warn"],partlate:["bad","Kısmi · gecikti","p-bad"],late:["bad","Gecikti","p-bad"],open:["","Bekleniyor","p-info"]}[s.st];
     return`<div class="item"><span class="av ${map[0]}" data-open="${k.id}" style="cursor:pointer">${s.st==="paid"?ic("check",2):esc(initials(k.ad))}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill ${map[2]}">${map[1]}</span> ${s.paid&&s.st!=="paid"?TL.format(s.paid)+" / ":""}${TL.format(s.due)} · gün ${payDay(k)}</small></span><span class="act">${s.st==="paid"?"":`<button class="btn sm ok" data-pay="${k.id}" data-ym="${ym}">Tahsil</button>`}</span></div>`}).join("")}</div>`;
   const pays=S.odemeler.filter(o=>o.tarih.slice(0,7)===ym).sort((a,b)=>b.tarih.localeCompare(a.tarih));
   h+=`<section class="sec"><div class="sechd"><h2>${esc(AYLAR[+ym.slice(5)-1])} içinde alınan ödemeler</h2></div>${pays.length?`<div class="card list">${pays.map(payRow).join("")}</div>`:`<div class="card empty" style="padding:16px">Bu ay içinde girilmiş ödeme yok.</div>`}</section>`;
   $("view").innerHTML=h;
+  $("bulk")&&($("bulk").onclick=()=>openBulk(ym));
   $("tPrev").onclick=()=>{ui.tYM=addMonths(ym,-1);render()};
   $("tNext").onclick=()=>{if(ym<curYM()){ui.tYM=addMonths(ym,1);render()}};
   bindCommon();
@@ -841,18 +885,22 @@ function vGiderler(){
   const yil=ui.gYil||String(NOW.getFullYear());
   let list=S.giderler.filter(g=>g.tarih.startsWith(yil));
   if(ui.gMulk)list=list.filter(g=>g.mulkId===ui.gMulk);
+  const ayCnt=Array(12).fill(0);list.forEach(g=>ayCnt[+g.tarih.slice(5,7)-1]++);
+  if(ui.gAy>=0)list=list.filter(g=>+g.tarih.slice(5,7)-1===ui.gAy);
   list.sort((a,b)=>b.tarih.localeCompare(a.tarih));
   const top=list.reduce((s,g)=>s+(+g.tutar||0),0);
   const byCat={};list.forEach(g=>byCat[g.tur]=(byCat[g.tur]||0)+(+g.tutar||0));
   const years=[...new Set([String(NOW.getFullYear()),...S.giderler.map(g=>g.tarih.slice(0,4))])].sort().reverse();
   let h=`<div class="chips">${years.map(y=>`<button class="chip ${y===yil?"on":""}" data-y="${y}">${y}</button>`).join("")}</div>`;
+  h+=`<div class="chips"><button class="chip ${ui.gAy<0?"on":""}" data-gay="-1">Tüm yıl</button>${AYK.map((a,i)=>`<button class="chip ${ui.gAy===i?"on":""}" data-gay="${i}" ${ayCnt[i]?"":'style="opacity:.45"'}>${a}</button>`).join("")}</div>`;
   if(S.mulkler.length)h+=`<div class="fld"><select id="gM" aria-label="Mülk filtresi"><option value="">Tüm mülkler</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),ui.gMulk)}</select></div>`;
-  h+=`<div class="card pad" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="color:var(--muted)">${yil} toplam gider</span><b class="num" style="font-size:22px">${TL.format(top)}</b></div>`;
+  h+=`<div class="card pad" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="color:var(--muted)">${ui.gAy>=0?AYLAR[ui.gAy]+" "+yil:yil} toplam gider</span><b class="num" style="font-size:22px">${TL.format(top)}</b></div>`;
   if(Object.keys(byCat).length)h+=`<div class="card pad" style="display:flex;flex-direction:column;gap:8px">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div><div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(c)}</span><b class="num">${TL.format(v)}</b></div><div style="height:6px;background:var(--surface2);border-radius:9px;margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:${Math.round(v/top*100)}%;background:var(--brand);border-radius:9px"></i></div></div>`).join("")}</div>`;
   if(!list.length)h+=`<div class="card empty"><b>Gider kaydı yok</b>Aidat, emlak vergisi, tamir gibi giderleri girersen net gelirini görürsün.</div>`;
   else h+=`<div class="card list">${list.map(g=>{const m=mById(g.mulkId);return`<button class="item" data-g="${g.id}"><span class="av warn">${ic("receipt")}</span><span class="main"><b>${esc(g.tur)}${g.aciklama?" · "+esc(g.aciklama):""}</b><small>${esc(fmtShortDate(g.tarih))}${m?" · "+esc(m.ad):""}</small></span><span class="side"><b>${TL.format(g.tutar)}</b></span></button>`}).join("")}</div>`;
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-y]").forEach(b=>b.onclick=()=>{ui.gYil=b.dataset.y;render()});
+  $("view").querySelectorAll("[data-gay]").forEach(b=>b.onclick=()=>{ui.gAy=+b.dataset.gay;render()});
   $("gM")&&($("gM").onchange=()=>{ui.gMulk=$("gM").value;render()});
   $("view").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>openGider(b.dataset.g));
   setFab("Gider",()=>openGider());
