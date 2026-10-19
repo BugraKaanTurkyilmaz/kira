@@ -226,7 +226,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.0.1";
+const VERSION="1.1.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -487,11 +487,28 @@ function vOzet(){
   }
   for(const k of act){const r=raiseInfo(k);if(r)todo.push({o:2,k,cls:"info",t:r.gun<0?"Zam zamanı geçti":r.gun===0?"Zam günü bugün":`${r.gun} gün sonra zam`,s:`Yıldönümü ${fmtShort(r.tarih)} · sınır %${PCT.format(L.tufe)}`,a:"raise"})}
   for(const k of act){const c=contractInfo(k);if(c&&c.gun<=60&&(!c.uzama||c.on))todo.push({o:3,k,cls:"mute",t:`Sözleşme ${c.gun} gün sonra ${c.uzama?"yenileniyor":"doluyor"}`,s:fmtDate(toISO(c.bitis))+(c.on?" · 10 yıl doldu":""),a:"open"})}
+  for(const m of S.mulkler){
+    for(const [f,ad] of [["dask","DASK"],["sigorta","Konut sigortası"]]){
+      const d=parseISO(m[f]);if(!d)continue;const g=daysBetween(today(),d);
+      if(g<=30&&g>=-365)todo.push({o:g<0?0.5:2.5,m,f,cls:g<0?"bad":"warn",t:g<0?`${ad} süresi doldu`:g===0?`${ad} bugün bitiyor`:`${ad} ${g} gün sonra bitiyor`,s:fmtDate(m[f]),a:"renew"});
+    }
+  }
+  /* emlak vergisi: 1. taksit Mayıs sonu, 2. taksit Kasım sonu */
+  {const y=NOW.getFullYear();
+   for(const [ay,son,tak] of [[4,31,"1. taksit"],[10,30,"2. taksit"]]){
+     const dl=new Date(y,ay,son),g=daysBetween(today(),dl);
+     if(g<0||g>20)continue;
+     const bas=toISO(new Date(y,ay-2,1));
+     for(const m of S.mulkler){
+       const odendi=S.giderler.some(x=>x.mulkId===m.id&&x.tur==="Emlak vergisi"&&x.tarih>=bas&&x.tarih<=toISO(dl));
+       if(!odendi)todo.push({o:2.6,m,cls:"warn",t:g===0?"Emlak vergisi son gün":`Emlak vergisi ${tak}: ${g} gün`,s:`Son gün ${fmtShort(dl)}`,a:"tax"});
+     }
+   }}
   todo.sort((a,b)=>a.o-b.o);
   h+=`<section class="sec"><div class="sechd"><h2>Yapılacaklar</h2></div>`;
   if(!S.kiracilar.length)h+="";
-  else if(!todo.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Her şey yolunda. Gecikmiş ödeme veya yaklaşan zam yok.</span></div>`;
-  else h+=`<div class="card list">${todo.map((x,i)=>`<div class="item"><span class="av ${x.cls==="info"?"":x.cls==="mute"?"":x.cls}">${x.a==="raise"?ic("up"):x.a==="open"?ic("doc"):initials(x.k.ad)}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="pay"?`<button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button>`:x.a==="raise"?`<button class="btn sm pri" data-raise="${x.k.id}">Zam</button>`:""}</span></div>`).join("")}</div>`;
+  else if(!todo.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Her şey yolunda. Gecikmiş ödeme, yaklaşan zam veya biten sigorta yok.</span></div>`;
+  else h+=`<div class="card list">${todo.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av ${x.cls==="info"?"":x.cls==="mute"?"":x.cls}">${x.a==="raise"?ic("up"):x.a==="open"?ic("doc"):initials(x.k.ad)}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="pay"?`<button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button>`:x.a==="raise"?`<button class="btn sm pri" data-raise="${x.k.id}">Zam</button>`:""}</span></div>`).join("")}</div>`;
   h+=`</section>`;
 
   /* son hareketler */
@@ -500,6 +517,9 @@ function vOzet(){
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
+  $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
+  $("view").querySelectorAll("[data-renew]").forEach(b=>b.onclick=()=>openMulk(b.dataset.renew,null,b.dataset.f));
+  $("view").querySelectorAll("[data-tax]").forEach(b=>b.onclick=()=>openGider(null,{tur:"Emlak vergisi",mulkId:b.dataset.tax}));
   $("eM")&&($("eM").onclick=()=>openMulk());
   $("eK")&&($("eK").onclick=()=>openKiraci());
   $("bYedek")&&($("bYedek").onclick=backup);
@@ -533,7 +553,7 @@ function vKiracilar(){
   /* mülkler */
   h+=`<section class="sec"><div class="sechd"><h2>Mülkler</h2><button id="addM">+ Mülk ekle</button></div>`;
   if(!S.mulkler.length)h+=`<div class="card empty" style="padding:18px">Daire, dükkân gibi mülklerini eklersen doluluk ve mülk bazında gelir-gider raporu görürsün.</div>`;
-  else h+=`<div class="card list">${S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>{const k=S.kiracilar.find(x=>x.mulkId===m.id&&isActive(x));return`<button class="item" data-mulk="${m.id}"><span class="av">${ic("building")}</span><span class="main"><b>${esc(m.ad)}</b><small>${esc(m.tur||"Konut")}${m.adres?" · "+esc(m.adres):""}</small></span><span class="side">${k?`<span class="pill p-ok">Dolu</span><small style="display:block">${esc(k.ad)}</small>`:`<span class="pill p-warn">Boş</span>`}</span></button>`}).join("")}</div>`;
+  else h+=`<div class="card list">${S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>{const k=S.kiracilar.find(x=>x.mulkId===m.id&&isActive(x));return`<button class="item" data-mulk="${m.id}"><span class="av">${ic("building")}</span><span class="main"><b>${esc(m.ad)}</b><small>${esc(m.tur||"Konut")}${(()=>{const d=parseISO(m.dask);if(!d)return m.tur==="Konut"||!m.tur?" · DASK girilmedi":"";const g=daysBetween(today(),d);return g<0?" · <span class=\"pill p-bad\">DASK bitti</span>":g<=30?` · <span class="pill p-warn">DASK ${g} gün</span>`:" · DASK "+esc(fmtShortDate(m.dask))})()}</small></span><span class="side">${k?`<span class="pill p-ok">Dolu</span><small style="display:block">${esc(k.ad)}</small>`:`<span class="pill p-warn">Boş</span>`}</span></button>`}).join("")}</div>`;
   h+=`</section>`;
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ui.kFilter=b.dataset.f;render()});
@@ -577,7 +597,7 @@ function openKiraci(id){
   });
 }
 
-function openMulk(id,onCreated){
+function openMulk(id,onCreated,focusField){
   const m=id?mById(id):null,d=m||{};
   const kir=m?S.kiracilar.filter(k=>k.mulkId===m.id):[];
   sheet(`<h3>${m?"Mülk":"Yeni mülk"}</h3>
@@ -587,12 +607,15 @@ function openMulk(id,onCreated){
   <div class="fld"><label for="mAdres">Adres</label><textarea id="mAdres">${esc(d.adres)}</textarea></div>
   <div class="g2"><div class="fld"><label for="mTapu">Ada / parsel</label><input id="mTapu" value="${esc(d.tapu)}"></div>
   <div class="fld"><label for="mDask">DASK bitişi</label><input id="mDask" type="date" value="${esc(d.dask)}"></div></div>
+  <div class="g2"><div class="fld"><label for="mSig">Konut sigortası bitişi</label><input id="mSig" type="date" value="${esc(d.sigorta)}"></div><div class="fld"><label for="mPol">Poliçe no / şirket</label><input id="mPol" value="${esc(d.police)}"></div></div>
+  <p class="hint">DASK ve sigorta bitişine 1 ay kala Özet'te uyarı çıkar. Yeniledikten sonra yeni bitiş tarihini buraya gir.</p>
   ${m&&kir.length?`<p class="hint">Bu mülkte ${kir.length} kiracı kaydı var: ${kir.map(k=>esc(k.ad)).join(", ")}</p>`:""}
   <p class="err" id="mErr"></p>
   <div class="btns grow">${m?`<button class="btn danger" id="mDel">Sil</button>`:`<button class="btn" data-close>Vazgeç</button>`}<button class="btn pri" id="mSave">Kaydet</button></div>`,(q,close)=>{
+    if(focusField){const el=q(focusField==="dask"?"#mDask":"#mSig");if(el){el.scrollIntoView({block:"center"});el.style.outline="2px solid var(--brand)"}}
     q("#mSave").onclick=()=>{
       const ad=q("#mAd").value.trim();if(!ad){q("#mErr").textContent="Mülk adı gerekli.";return}
-      const rec={...(m||{id:uid()}),ad,tur:q("#mTur").value,aidat:parseMoney(q("#mAidat").value)||"",adres:q("#mAdres").value.trim(),tapu:q("#mTapu").value.trim(),dask:q("#mDask").value};
+      const rec={...(m||{id:uid()}),ad,tur:q("#mTur").value,aidat:parseMoney(q("#mAidat").value)||"",adres:q("#mAdres").value.trim(),tapu:q("#mTapu").value.trim(),dask:q("#mDask").value,sigorta:q("#mSig").value,police:q("#mPol").value.trim()};
       if(m)Object.assign(m,rec);else S.mulkler.push(rec);
       save();close();render();toast("Kaydedildi");if(!m&&onCreated)onCreated(rec);
     };
@@ -813,8 +836,8 @@ function vGiderler(){
   $("view").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>openGider(b.dataset.g));
   setFab("Gider",()=>openGider());
 }
-function openGider(id){
-  const g=id?S.giderler.find(x=>x.id===id):null,d=g||{};
+function openGider(id,preset){
+  const g=id?S.giderler.find(x=>x.id===id):null,d=g||preset||{};
   sheet(`<h3>${g?"Gideri düzenle":"Yeni gider"}</h3>
   <div class="g2"><div class="fld"><label for="gT">Tür</label><select id="gT">${opt(GIDER_TUR,d.tur||"Aidat")}</select></div>
   <div class="fld"><label for="gTu">Tutar (₺)</label><input id="gTu" inputmode="decimal" value="${esc(fmtInput(d.tutar))}"></div></div>
