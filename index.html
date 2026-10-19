@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.8.1";
+const VERSION="1.8.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -974,8 +974,8 @@ function openDetail(id){
   </dl></div>
   ${c&&(c.bes||c.on)?`<div class="banner warn" style="flex-wrap:wrap">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span>${k.sozBas&&k.sozBas!==k.giris&&k.sureBas!==k.sozBas?`<button id="dReset">Yeni sözleşmeden say</button>`:""}</div>`:""}
   ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${z.sure} yıl</b><small>${TL.format(z.kira)}/ay${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
-  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2><button id="dZm">Zam bildirimi</button></div><div class="card list">${hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
-  ${allPays.length?`<div class="sec"><div class="sechd"><h2>Tahsilatlar</h2></div><div class="card list">${allPays.slice(0,24).map(payRow).join("")}</div></div>`:""}
+  ${hist.length?`<div class="sec"><div class="sechd"><h2>Zam geçmişi</h2><button id="dZm">Zam bildirimi</button></div><div class="card list">${hist.slice(0,3).map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div></div>`:""}
+  ${allPays.length?`<div class="sec"><div class="sechd"><h2>Tahsilatlar · ${allPays.length}</h2>${allPays.length>3?`<button id="dPaysAll">Tümünü göster</button>`:""}</div><div class="card list" id="dPays">${allPays.slice(0,3).map(payRow).join("")}</div></div>`:""}
   <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dRaise">Zam yap</button><button class="btn" id="dSoz">Yeni sözleşme</button>`:`<button class="btn" id="dBack">Geri al</button>`}</div>
   <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:""}<button class="btn danger" id="dDel">Kiracıyı sil</button></div>`,(q,close,ov)=>{
     q("#dSoz")&&(q("#dSoz").onclick=()=>openSozlesme(k.id));
@@ -989,7 +989,8 @@ function openDetail(id){
     q("#dRaise")&&(q("#dRaise").onclick=()=>openRaise(k.id));
     q("#dEdit").onclick=()=>openKiraci(k.id);
     sh.querySelectorAll(".grid12 button").forEach(b=>b.onclick=()=>openPay(k.id,b.dataset.ym));
-    sh.querySelectorAll("[data-rcpt]").forEach(b=>b.onclick=()=>openReceipt(b.dataset.rcpt));
+    const bindR=()=>sh.querySelectorAll("[data-rcpt]").forEach(b=>b.onclick=()=>openReceipt(b.dataset.rcpt));bindR();
+    q("#dPaysAll")&&(q("#dPaysAll").onclick=()=>{q("#dPays").innerHTML=allPays.map(payRow).join("");q("#dPaysAll").remove();bindR()});
     q("#dOut")&&(q("#dOut").onclick=()=>{
       sheet(`<h3>Çıkış kaydı</h3><p class="sub">${esc(k.ad)}</p><div class="fld"><label for="oT">Çıkış tarihi</label><input id="oT" type="date" value="${todayISO()}"></div><p class="hint">Kiracı "Çıkanlar" listesine taşınır, geçmiş kayıtları kalır.${k.depozito?` Depozito: ${TL.format(k.depozito)}.`:""}</p><div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="oOk">Kaydet</button></div>`,(q2,c2)=>{q2("#oOk").onclick=()=>{k.cikis=q2("#oT").value||todayISO();save();c2();close();render();toast("Çıkış kaydedildi")}})
     });
@@ -1310,18 +1311,28 @@ function vTahsilat(){
   const acik=rows.filter(k=>periodState(k,ym).st!=="paid");
   if(acik.length>1)h+=`<div class="btns grow"><button class="btn ok" id="bulk">${ic("check",2)}Toplu tahsilat · ${acik.length}</button><button class="btn wa" id="bulkMsg">${ic("wa")}Toplu bildirim · ${acik.length}</button></div>`;
   else if(acik.length===1)h+=`<button class="btn wa" id="bulkMsg" style="width:100%">${ic("wa")}Bildirim gönder · ${esc(acik[0].ad)}</button>`;
+  const odenen=rows.filter(k=>periodState(k,ym).st==="paid");
+  const tf=ui.tF||(acik.length?"acik":"tum");
+  const shown=tf==="acik"?acik:tf==="odendi"?odenen:rows;
+  if(rows.length)h+=`<div class="seg">${[["acik","Bekleyen",acik.length],["odendi","Ödenen",odenen.length],["tum","Tümü",rows.length]].map(([k,l,n])=>`<button data-tf="${k}" class="${tf===k?"on":""}">${l} <span class="num" style="opacity:.6">${n}</span></button>`).join("")}</div>`;
   if(!rows.length)h+=`<div class="card empty"><b>Bu ay için kayıt yok</b>Bu ayda takipte olan kiracı bulunmuyor.</div>`;
-  else h+=`<div class="card list">${rows.map(k=>{const s=periodState(k,ym);const map={paid:["ok","Ödendi","p-ok"],part:["warn","Kısmi","p-warn"],partlate:["bad","Kısmi · gecikti","p-bad"],late:["bad","Gecikti","p-bad"],open:["","Bekleniyor","p-info"]}[s.st];
+  else if(!shown.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>${tf==="acik"?"Bu ayın tüm kiraları tahsil edildi.":"Bu ay henüz ödeme yok."}</span></div>`;
+  else h+=`<div class="card list">${shown.map(k=>{const s=periodState(k,ym);const map={paid:["ok","Ödendi","p-ok"],part:["warn","Kısmi","p-warn"],partlate:["bad","Kısmi · gecikti","p-bad"],late:["bad","Gecikti","p-bad"],open:["","Bekleniyor","p-info"]}[s.st];
     return`<div class="item"><span class="av ${map[0]}" data-open="${k.id}" style="cursor:pointer">${s.st==="paid"?ic("check",2):esc(initials(k.ad))}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill ${map[2]}">${map[1]}</span> ${s.paid&&s.st!=="paid"?TL.format(s.paid)+" / ":""}${TL.format(s.due)} · gün ${payDay(k)}</small></span><span class="act"><button class="btn sm" data-tmsg="${k.id}" aria-label="Bildirim gönder" title="Bildirim gönder">${ic("wa")}</button>${s.st==="paid"?"":`<button class="btn sm ok" data-pay="${k.id}" data-ym="${ym}">Tahsil</button>`}</span></div>`}).join("")}</div>`;
   const pays=S.odemeler.filter(o=>o.tarih.slice(0,7)===ym).sort((a,b)=>b.tarih.localeCompare(a.tarih));
-  h+=`<section class="sec"><div class="sechd"><h2>${esc(AYLAR[+ym.slice(5)-1])} içinde alınan ödemeler</h2></div>${pays.length?`<div class="card list">${pays.map(payRow).join("")}</div>`:`<div class="card empty" style="padding:16px">Bu ay içinde girilmiş ödeme yok.</div>`}</section>`;
+  if(pays.length){
+    const top=pays.reduce((t,o)=>t+(+o.tutar||0),0);
+    h+=`<div class="card list"><button class="item" id="tPays"><span class="av ok">${ic("receipt")}</span><span class="main"><b>${esc(AYLAR[+ym.slice(5)-1])} içinde alınan ödemeler</b><small>${pays.length} ödeme · makbuzlar</small></span><span class="side"><b>${TL.format(top)}</b><small>${ui.tPays?"Gizle":"Göster"}</small></span></button>${ui.tPays?pays.map(payRow).join(""):""}</div>`;
+  }
   $("view").innerHTML=h;
   $("bulk")&&($("bulk").onclick=()=>openBulk(ym));
+  $("view").querySelectorAll("[data-tf]").forEach(b=>b.onclick=()=>{ui.tF=b.dataset.tf;render()});
+  $("tPays")&&($("tPays").onclick=()=>{ui.tPays=!ui.tPays;const y=window.scrollY;render();window.scrollTo(0,y)});
   $("bulkMsg")&&($("bulkMsg").onclick=()=>openBulkMsg(ym,acik));
   $("view").querySelectorAll("[data-tmsg]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMessage(b.dataset.tmsg,null,ym)});
   $("tM")&&($("tM").onchange=()=>{ui.tM=$("tM").value;render()});
-  $("tPrev").onclick=()=>{ui.tYM=addMonths(ym,-1);render()};
-  $("tNext").onclick=()=>{if(ym<curYM()){ui.tYM=addMonths(ym,1);render()}};
+  $("tPrev").onclick=()=>{ui.tYM=addMonths(ym,-1);ui.tF=null;render()};
+  $("tNext").onclick=()=>{if(ym<curYM()){ui.tYM=addMonths(ym,1);ui.tF=null;render()}};
   bindCommon();
   setFab("Tahsilat",()=>openPay());
 }
