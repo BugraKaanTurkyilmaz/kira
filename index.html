@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.0";
+const VERSION="2.0.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -722,22 +722,32 @@ function vOzet(){
   }
   h+=`<button class="card limit ${stale?"stale":""}" id="bLimit" style="text-align:left;width:100%"><span class="pct">%${PCT.format(L.tufe)}</span><span class="txt"><b>Yasal kira artış sınırı</b>${stale?`${esc(ymLabel(L.tufeAy))} oranı. Yeni oran henüz gelmedi.`:`${esc(ymLabel(L.tufeAy))} · 12 aylık TÜFE ortalaması`}</span>${ic("right")}</button>`;
   const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
-  const yak=zr.filter(x=>x.r.gun<=60),sonra=zr.filter(x=>x.r.gun>60);
+  const yak=zr.filter(x=>x.r.gun<=30),sonra=zr.filter(x=>x.r.gun>30);
   if(act.length){
-    h+=`<section class="sec"><div class="sechd"><h2>Yaklaşan zamlar${yak.length?" · "+yak.length:""}</h2><small style="color:var(--muted)">60 gün içinde</small></div>`;
-    h+=yak.length?`<div class="card list">${yak.map(({k,r})=>raiseRow(k,r,L)).join("")}</div>`:`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Önümüzdeki 60 gün içinde zammı gelen kiracı yok.</span></div>`;
+    h+=`<section class="sec"><div class="sechd"><h2>Yaklaşan zamlar${yak.length?" · "+yak.length:""}</h2><small style="color:var(--muted)">1 ay içinde</small></div>`;
+    h+=yak.length?`<div class="card list">${yak.map(({k,r})=>raiseRow(k,r,L)).join("")}</div>`:`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Önümüzdeki 1 ay içinde zammı gelen kiracı yok.</span></div>`;
     h+=`</section>`;
   }
   if(sonra.length){
-    const show=ui.zAll?sonra:sonra.slice(0,5);
-    h+=`<section class="sec"><div class="sechd"><h2>Sonraki zamlar</h2>${sonra.length>5?`<button id="zAll">${ui.zAll?"Daralt":`Tümü (${sonra.length})`}</button>`:""}</div><div class="card list">${show.map(({k,r})=>`<button class="item" data-open="${k.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k.ad)}</b><small>${esc(kAdres(k)||kTur(k))}</small></span><span class="side"><b style="font-weight:500">${esc(fmtShortDate(toISO(r.tarih)))}</b><small>${TL.format(k.kira||0)}</small></span></button>`).join("")}</div></section>`;
+    const ymOfD=d=>ymOf(d.getFullYear(),d.getMonth());
+    const groups=[];for(const x of sonra){const ym=ymOfD(x.r.tarih);let g=groups.find(g=>g.ym===ym);if(!g){g={ym,list:[]};groups.push(g)}g.list.push(x)}
+    if(ui.zM&&!groups.some(g=>g.ym===ui.zM))ui.zM="";
+    h+=`<section class="sec"><div class="sechd"><h2>Sonraki zamlar · ${sonra.length}</h2></div>
+    <div class="chips"><button class="chip ${!ui.zM?"on":""}" data-zm="">Tümü</button>${groups.map(g=>`<button class="chip ${ui.zM===g.ym?"on":""}" data-zm="${g.ym}">${esc(ymShort(g.ym))} <span class="num" style="opacity:.6">${g.list.length}</span></button>`).join("")}</div>`;
+    for(const g of groups){
+      if(ui.zM&&ui.zM!==g.ym)continue;
+      const top=g.list.reduce((t,x)=>t+(+x.k.kira||0),0);
+      h+=`<div class="sechd" style="margin-top:4px"><h2 style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--fg)">${esc(ymLabel(g.ym))}</h2><small style="color:var(--muted)">${g.list.length} kiracı · ${TL.format(top)}</small></div>
+      <div class="card list">${g.list.map(({k,r})=>`<button class="item" data-open="${k.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k.ad)}</b><small>${esc(kAdres(k)||kTur(k))}</small></span><span class="side"><b style="font-weight:500">${r.tarih.getDate()} ${esc(AYK[r.tarih.getMonth()])}</b><small>${TL.format(k.kira||0)}</small></span></button>`).join("")}</div>`;
+    }
+    h+=`</section>`;
   }
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
   $("eK")&&($("eK").onclick=()=>openKiraci());
   $("bAcc")&&($("bAcc").onclick=openAccount);
-  $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
+  $("view").querySelectorAll("[data-zm]").forEach(b=>b.onclick=()=>{ui.zM=b.dataset.zm;const y=window.scrollY;render();window.scrollTo(0,y)});
   setFab("Kiracı",()=>openKiraci());
 }
 const fmtShort=d=>d.getDate()+" "+AYLAR[d.getMonth()];
@@ -766,7 +776,7 @@ function vKiracilar(){
   h+=`<div class="g2"><input class="search" id="kq" type="search" placeholder="İsim veya adres ara" value="${esc(ui.kQ)}"><select class="search" id="kAy" aria-label="Zam ayı">${opt([["-1","Zam ayı: tümü"],...AYLAR.map((a,i)=>[String(i),a+" zammı"])],String(ui.kAy))}</select></div>`;
   if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?"Arama veya filtreyi değiştir.":"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
   else h+=`<div class="card list">${list.map(k=>{const r=nextRaise(k);
-    return`<button class="item" data-open="${k.id}"><span class="av">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc([kAdres(k),kTur(k)].filter(Boolean).join(" · "))}</small></span><span class="side"><b>${TL.format(k.kira||0)}</b><small>${isActive(k)?(r?(r.gun<=60?`<span class="pill p-${r.gun<0?"bad":"warn"}">zam ${r.gun<0?"gecikti":r.gun+" gün"}</span>`:"zam "+esc(fmtShortDate(toISO(r.tarih)))):""):"çıktı "+esc(fmtShortDate(k.cikis))}</small></span></button>`}).join("")}</div>`;
+    return`<button class="item" data-open="${k.id}"><span class="av">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc([kAdres(k),kTur(k)].filter(Boolean).join(" · "))}</small></span><span class="side"><b>${TL.format(k.kira||0)}</b><small>${isActive(k)?(r?(r.gun<=30?`<span class="pill p-${r.gun<0?"bad":"warn"}">zam ${r.gun<0?"gecikti":r.gun+" gün"}</span>`:"zam "+esc(fmtShortDate(toISO(r.tarih)))):""):"çıktı "+esc(fmtShortDate(k.cikis))}</small></span></button>`}).join("")}</div>`;
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ui.kFilter=b.dataset.f;render()});
   $("view").querySelectorAll("[data-kt]").forEach(b=>b.onclick=()=>{ui.kT=b.dataset.kt;render()});
