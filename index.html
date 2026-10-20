@@ -62,7 +62,7 @@ main{max-width:760px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-righ
 
 /* nav */
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.nav div{max-width:760px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);height:var(--nav-h)}
+.nav div{max-width:760px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);height:var(--nav-h)}
 .nav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:600;color:var(--faint)}
 .nav button svg{width:22px;height:22px}
 .nav button.on{color:var(--brand)}
@@ -112,7 +112,7 @@ button.card{font:inherit;color:inherit}
 .item .av svg{width:20px;height:20px}
 .item .main{flex:1;min-width:0}
 .item .main b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .main small{display:block;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .main small{display:block;margin-top:1px;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .side{text-align:right;flex-shrink:0}
 .item .side b{display:block;font-weight:600;font-variant-numeric:tabular-nums}
 .item .side small{font-size:12px;color:var(--muted)}
@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="1.9.0";
+const VERSION="2.0.0";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -521,6 +521,22 @@ const cloudLabel=()=>CLOUD.needVerify?"E-posta doğrulaması bekleniyor":CLOUD.d
 const kById=id=>S.kiracilar.find(k=>k.id===id);
 const mById=id=>S.mulkler.find(m=>m.id===id);
 const isActive=k=>!k.cikis||k.cikis>todayISO();
+const TURLER=["Konut","İş yeri","Arsa"];
+const kTur=k=>TURLER.includes(k.tur)?k.tur:"Konut";
+const kAdres=k=>k.adres||"";
+/* eski sürümlerden: ayrı mülk kaydı varsa adresi ve türü kiracıya taşı */
+function migrate(){
+  let ch=false;
+  for(const k of S.kiracilar){
+    if(k.adres==null||!k.tur){
+      const m=S.mulkler.find(x=>x.id===k.mulkId);
+      if(k.adres==null){k.adres=m?m.ad+(m.adres?" · "+m.adres:""):"";ch=true}
+      if(!k.tur){k.tur=m?(m.tur==="İş yeri"?"İş yeri":m.tur==="Arsa / diğer"?"Arsa":"Konut"):"Konut";ch=true}
+    }
+  }
+  if(S.ayar.pinHash){S.ayar.pinHash="";ch=true}
+  if(ch)save();
+}
 
 /* ================== TÜFE ================== */
 function limitNow(){
@@ -675,132 +691,54 @@ function waLink(tel,text){
 function opt(list,val){return list.map(x=>{const[v,l]=Array.isArray(x)?x:[x,x];return`<option value="${esc(v)}"${v===val?" selected":""}>${esc(l)}</option>`}).join("")}
 
 /* ================== yönlendirme ================== */
-const TABS=[["ozet","Özet","home"],["kiracilar","Kiracılar","users"],["tahsilat","Tahsilat","wallet"],["giderler","Giderler","receipt"],["rapor","Rapor","chart"]];
+const TABS=[["ozet","Zamlar","up"],["kiracilar","Kiracılar","users"]];
 let tab="ozet";
 const ui={zAll:false,kAy:-1,gAy:-1,kFilter:"aktif",kQ:"",tYM:null,gYM:null,rYil:null,gMulk:""};
 function go(t){tab=t;try{sessionStorage.setItem("tab",t)}catch(e){}render();window.scrollTo(0,0)}
 function renderNav(){$("nav").innerHTML=TABS.map(([k,l,i])=>`<button data-t="${k}" class="${tab===k?"on":""}" aria-label="${l}">${ic(i)}<span>${l}</span></button>`).join("");$("nav").querySelectorAll("button").forEach(b=>b.onclick=()=>go(b.dataset.t))}
 function setFab(label,fn){const f=$("fab");if(!label){f.hidden=true;return}f.hidden=false;f.innerHTML=ic("plus",2.2)+esc(label);f.onclick=fn}
 function render(){
-  NOW=new Date();
+  NOW=new Date();migrate();
   renderNav();
-  const title=TABS.find(t=>t[0]===tab)[1];
+  const title=tab==="ozet"?"Kira zamları":"Kiracılar";
   $("title").innerHTML=esc(title)+`<small>${NOW.toLocaleDateString("tr-TR",{day:"numeric",month:"long",weekday:"long"})}</small>`;
-  ({ozet:vOzet,kiracilar:vKiracilar,tahsilat:vTahsilat,giderler:vGiderler,rapor:vRapor})[tab]();
+  ({ozet:vOzet,kiracilar:vKiracilar})[tab]();
 }
 
 /* ================== ÖZET ================== */
+function raiseRow(k,r,L){
+  const max=Math.floor((k.kira||0)*(1+L.tufe/100));
+  const cls=r.gun<0?"bad":r.gun<=30?"warn":"info";
+  const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":`${r.gun} gün kaldı`;
+  return`<div class="item"><span class="av ${cls==="info"?"":cls}" data-open="${k.id}" style="cursor:pointer">${esc(initials(k.ad))}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small>${esc(kAdres(k)||kTur(k))}</small><small><span class="pill p-${cls}">${esc(lbl)} · ${esc(fmtShortDate(toISO(r.tarih)).replace(/ \d{4}$/,""))}</span></small><small>${TL.format(k.kira||0)} → <b style="display:inline;color:var(--fg)">${TL.format(max)}</b></small></span><span class="act"><button class="btn sm" data-zmsg="${k.id}" aria-label="Zam bildirimi gönder" title="Zam bildirimi">${ic("wa")}</button><button class="btn sm pri" data-raise="${k.id}">Zam</button></span></div>`;
+}
 function vOzet(){
-  const ym=curYM(),act=S.kiracilar.filter(isActive);
-  const {exp,col}=monthTotals(ym);
-  const pct=exp?Math.min(100,Math.round(col/exp*100)):0;
-  const borc=S.kiracilar.reduce((s,k)=>s+balance(k),0);
-  const yil=String(NOW.getFullYear());
-  const yGelir=S.odemeler.filter(o=>o.tarih.startsWith(yil)).reduce((s,o)=>s+(+o.tutar||0),0);
-  const yGider=S.giderler.filter(g=>g.tarih.startsWith(yil)).reduce((s,g)=>s+(+g.tutar||0),0);
-  const mCount=S.mulkler.length,occ=S.mulkler.filter(m=>act.some(k=>k.mulkId===m.id)).length;
-  const L=limitNow(),stale=L.tufeAy<ym;
+  const act=S.kiracilar.filter(isActive),L=limitNow(),stale=L.tufeAy<curYM();
   let h="";
-  if(!S.kiracilar.length){
-    h+=`<div class="card empty"><b>Hoş geldin</b>Önce mülklerini, sonra kiracılarını ekle. Eski bir Excel listen varsa Ayarlar'dan tek seferde aktarabilirsin.<div class="btns" style="justify-content:center"><button class="btn" id="eM">${ic("building")}Mülk ekle</button><button class="btn pri" id="eK">${ic("plus",2)}Kiracı ekle</button></div></div>`;
-  }
-  const yed=S.ayar.sonYedek?daysBetween(parseISO(S.ayar.sonYedek)||today(),today()):999;
-  const cloudOK=!!CLOUD.user;
   if(CLOUD.user&&(CLOUD.needVerify||CLOUD.denied))h+=`<div class="banner warn">${ic("alert")}<span>${CLOUD.needVerify?"<b>E-postanı doğrula.</b> Doğrulanana kadar kayıtlar buluta yedeklenmiyor.":"<b>Hesabın onay bekliyor.</b> Kayıtlar şimdilik sadece bu telefonda."}</span><button id="bAcc">Aç</button></div>`;
-  else if(CLOUD.api&&!CLOUD.user)h+=`<div class="banner info">${ic("check",2)}<span><b>Verilerin kaybolmasın.</b> Giriş yap; her kayıt buluta yedeklensin, telefon değişse de geri gelsin.</span><button id="bAcc">Giriş yap</button></div>`;
-  else if(!cloudOK&&S.kiracilar.length&&yed>30)h+=`<div class="banner warn">${ic("alert")}<span>${S.ayar.sonYedek?yed+" gündür yedek alınmadı.":"Henüz yedek alınmadı."} Veriler sadece bu telefonda duruyor.</span><button id="bYedek">Yedek al</button></div>`;
-  h+=`<div class="hero"><div class="lbl">${esc(AYLAR[NOW.getMonth()])} tahsilatı</div><div class="big num">${TL.format(col)}</div><div class="bar"><i style="width:${pct}%"></i></div><div class="row"><span>Beklenen ${TL.format(exp)}</span><span>%${pct}</span></div></div>`;
-  h+=`<div class="kpis">
-    <div class="card kpi ${borc>0?"bad":"ok"}"><b class="num">${TL.format(borc)}</b><span>Gecikmiş alacak</span></div>
-    <button class="card kpi" id="kMulk" style="text-align:left;font:inherit;color:inherit;cursor:pointer"><b class="num">${mCount} mülk</b><span>${mCount?`${occ} dolu · ${mCount-occ} boş · ${act.length} kiracı`:`${act.length} kiracı · mülk ekle`}</span></button>
-    <div class="card kpi"><b class="num">${TL.format(yGelir)}</b><span>${yil} tahsilat</span></div>
-    <div class="card kpi"><b class="num">${TL.format(yGelir-yGider)}</b><span>${yil} net (gider ${TL.format(yGider)})</span></div>
-  </div>`;
-  h+=`<button class="card limit ${stale?"stale":""}" id="bLimit" style="text-align:left;width:100%"><span class="pct">%${PCT.format(L.tufe)}</span><span class="txt"><b>Yasal kira artış sınırı</b>${stale?`${esc(ymLabel(L.tufeAy))} oranı. Yeni oran henüz gelmedi.`:`${esc(ymLabel(L.tufeAy))} · 12 aylık TÜFE ortalaması${L.src==="oto"?" · otomatik":""}`}</span>${ic("right")}</button>`;
-
-  /* yaklaşan zamlar */
+  else if(CLOUD.api&&!CLOUD.user)h+=`<div class="banner info">${ic("check",2)}<span><b>Verilerin kaybolmasın.</b> Giriş yap; kayıtların buluta yedeklensin.</span><button id="bAcc">Giriş yap</button></div>`;
+  if(!act.length){
+    h+=`<div class="card empty"><b>Hoş geldin</b>Kiracılarını ekle; zam zamanı gelenler burada görünsün.<div class="btns" style="justify-content:center"><button class="btn pri" id="eK">${ic("plus",2)}Kiracı ekle</button></div></div>`;
+  }
+  h+=`<button class="card limit ${stale?"stale":""}" id="bLimit" style="text-align:left;width:100%"><span class="pct">%${PCT.format(L.tufe)}</span><span class="txt"><b>Yasal kira artış sınırı</b>${stale?`${esc(ymLabel(L.tufeAy))} oranı. Yeni oran henüz gelmedi.`:`${esc(ymLabel(L.tufeAy))} · 12 aylık TÜFE ortalaması`}</span>${ic("right")}</button>`;
   const zr=act.map(k=>({k,r:nextRaise(k)})).filter(x=>x.r).sort((a,b)=>a.r.gun-b.r.gun);
-  if(zr.length){
-    const yakin=zr.filter(x=>x.r.gun<=60),show=ui.zAll?zr:yakin.slice(0,3);
-    h+=`<section class="sec"><div class="sechd"><h2>${ui.zAll?"Zam takvimi":"Yaklaşan zamlar"}</h2><button id="zAll">${ui.zAll?"Daralt":`Tümü (${zr.length})`}</button></div>`;
-    if(!show.length){const n=zr[0];h+=`<div class="card banner" style="background:var(--surface)">${ic("up")}<span>Önümüzdeki 60 gün içinde zammı gelen kiracı yok. Sıradaki zam: <b>${esc(n.k.ad)}</b>, ${esc(fmtDate(toISO(n.r.tarih)))}.</span></div>`}
-    else h+=`<div class="card list">${show.map(({k,r})=>{
-      const max=Math.floor((k.kira||0)*(1+L.tufe/100));
-      const cls=r.gun<0?"bad":r.gun<=60?"warn":"mute";
-      const lbl=r.gun<0?`${-r.gun} gün gecikti`:r.gun===0?"Bugün":r.gun<=60?`${r.gun} gün kaldı`:fmtShortDate(toISO(r.tarih));
-      return`<div class="item"><span class="av ${cls==="mute"?"":cls}">${ic("up")}</span><span class="main" data-open="${k.id}" style="cursor:pointer"><b>${esc(k.ad)}</b><small><span class="pill p-${cls}">${esc(lbl)}</span> ${TL.format(k.kira||0)} → ${TL.format(max)}</small></span><span class="act"><button class="btn sm" data-zmsg="${k.id}" aria-label="Zam bildirimi gönder" title="Zam bildirimi">${ic("wa")}</button><button class="btn sm ${r.gun<=60?"pri":""}" data-raise="${k.id}">Zam</button></span></div>`}).join("")}</div>`;
+  const yak=zr.filter(x=>x.r.gun<=60),sonra=zr.filter(x=>x.r.gun>60);
+  if(act.length){
+    h+=`<section class="sec"><div class="sechd"><h2>Yaklaşan zamlar${yak.length?" · "+yak.length:""}</h2><small style="color:var(--muted)">60 gün içinde</small></div>`;
+    h+=yak.length?`<div class="card list">${yak.map(({k,r})=>raiseRow(k,r,L)).join("")}</div>`:`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Önümüzdeki 60 gün içinde zammı gelen kiracı yok.</span></div>`;
     h+=`</section>`;
   }
-
-  /* yapılacaklar */
-  const todo=[];
-  for(const k of act){
-    const late=lateMonths(k),b=balance(k);
-    if(late.length&&b>0)todo.push({o:0,k,cls:"bad",t:`${TL.format(b)} gecikmiş`,s:late.length>1?`${late.length} ay: ${late.slice(0,3).map(ymShort).join(", ")}${late.length>3?"…":""}`:`${ymLabel(late[0])} kirası`,a:"pay"});
+  if(sonra.length){
+    const show=ui.zAll?sonra:sonra.slice(0,5);
+    h+=`<section class="sec"><div class="sechd"><h2>Sonraki zamlar</h2>${sonra.length>5?`<button id="zAll">${ui.zAll?"Daralt":`Tümü (${sonra.length})`}</button>`:""}</div><div class="card list">${show.map(({k,r})=>`<button class="item" data-open="${k.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k.ad)}</b><small>${esc(kAdres(k)||kTur(k))}</small></span><span class="side"><b style="font-weight:500">${esc(fmtShortDate(toISO(r.tarih)))}</b><small>${TL.format(k.kira||0)}</small></span></button>`).join("")}</div></section>`;
   }
-  for(const k of act){
-    const ps=periodState(k,ym);if(ps.st!=="open"&&ps.st!=="part")continue;if(!periods(k).includes(ym))continue;
-    const d=new Date(NOW.getFullYear(),NOW.getMonth(),Math.min(payDay(k),28)),g=daysBetween(today(),d);
-    if(g>=0&&g<=7)todo.push({o:1,k,cls:"warn",t:g===0?"Ödeme günü bugün":`${g} gün sonra ödeme günü`,s:`${TL.format(ps.due-ps.paid)} · ${fmtShort(d)}`,a:"pay"});
-  }
-  for(const k of act){const c=contractInfo(k);if(c&&c.gun<=60&&(!c.uzama||c.on))todo.push({o:3,k,cls:"mute",t:`Sözleşme ${c.gun} gün sonra ${c.uzama?"yenileniyor":"doluyor"}`,s:fmtDate(toISO(c.bitis))+(c.on?" · 10 yıl doldu":""),a:"open"})}
-  for(const m of S.mulkler){
-    for(const [f,ad] of [["dask","DASK"],["sigorta","Konut sigortası"]]){
-      const d=parseISO(m[f]);if(!d)continue;const g=daysBetween(today(),d);
-      if(g<=30&&g>=-365)todo.push({o:g<0?0.5:2.5,m,f,cls:g<0?"bad":"warn",t:g<0?`${ad} süresi doldu`:g===0?`${ad} bugün bitiyor`:`${ad} ${g} gün sonra bitiyor`,s:fmtDate(m[f]),a:"renew"});
-    }
-  }
-  /* emlak vergisi: 1. taksit Mayıs sonu, 2. taksit Kasım sonu */
-  {const y=NOW.getFullYear();
-   for(const [ay,son,tak] of [[4,31,"1. taksit"],[10,30,"2. taksit"]]){
-     const dl=new Date(y,ay,son),g=daysBetween(today(),dl);
-     if(g<0||g>20)continue;
-     const bas=toISO(new Date(y,ay-2,1));
-     for(const m of S.mulkler){
-       const odendi=S.giderler.some(x=>x.mulkId===m.id&&x.tur==="Emlak vergisi"&&x.tarih>=bas&&x.tarih<=toISO(dl));
-       if(!odendi)todo.push({o:2.6,m,cls:"warn",t:g===0?"Emlak vergisi son gün":`Emlak vergisi ${tak}: ${g} gün`,s:`Son gün ${fmtShort(dl)}`,a:"tax"});
-     }
-   }}
-  todo.sort((a,b)=>a.o-b.o);
-  /* tahsilat özeti: kiracılar tek tek değil, gruplar hâlinde; dokununca açılır */
-  const lateL=todo.filter(x=>x.o===0&&x.k),soonL=todo.filter(x=>x.o===1&&x.k),other=todo.filter(x=>!(x.k&&(x.o===0||x.o===1)));
-  const sumL=lateL.reduce((t,x)=>t+balance(x.k),0);
-  const sumS=soonL.reduce((t,x)=>{const p=periodState(x.k,ym);return t+p.due-p.paid},0);
-  const mini=(x,amt,sub)=>`<div class="item" style="padding:9px 14px 9px 22px"><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b style="font-weight:500">${esc(x.k.ad)}</b><small>${esc(sub)}</small></span><span class="side" style="margin-right:4px"><b>${TL.format(amt)}</b></span><button class="btn sm" data-tmsg="${x.k.id}" aria-label="Bildirim gönder" style="margin-right:6px">${ic("wa")}</button><button class="btn sm ok" data-pay="${x.k.id}">Tahsil</button></div>`;
-  const grp=(key,cls,icn,title,n,sum,rows)=>`<button class="item" data-grp="${key}"><span class="av ${cls}">${icn}</span><span class="main"><b>${title}</b><small>${n} kiracı</small></span><span class="side"><b style="color:var(--${cls==="bad"?"bad":"warn"})">${TL.format(sum)}</b><small>${ui["o"+key]?"Gizle":"Göster"}</small></span></button>${ui["o"+key]?rows:""}`;
-  if(S.kiracilar.length){
-    h+=`<section class="sec"><div class="sechd"><h2>Tahsilat durumu</h2>${lateL.length+soonL.length>1?`<button id="goT">Toplu tahsilat</button>`:""}</div>`;
-    if(!lateL.length&&!soonL.length)h+=`<div class="card banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Gecikmiş ödeme yok, bu hafta ödeme günü gelen de yok.</span></div>`;
-    else h+=`<div class="card list">${lateL.length?grp("Late","bad",ic("alert",2),"Gecikmiş ödemeler",lateL.length,sumL,lateL.map(x=>mini(x,balance(x.k),x.s)).join("")):""}${soonL.length?grp("Soon","warn",ic("cal"),"Bu hafta ödeme günü",soonL.length,sumS,soonL.map(x=>{const p=periodState(x.k,ym);return mini(x,p.due-p.paid,x.t)}).join("")):""}</div>`;
-    h+=`</section>`;
-  }
-  if(other.length){
-    h+=`<section class="sec"><div class="sechd"><h2>Yapılacaklar</h2></div>`;
-    h+=`<div class="card list">${other.map((x,i)=>x.m?`<div class="item"><span class="av ${x.cls}">${ic("building")}</span><span class="main" data-mulk="${x.m.id}" style="cursor:pointer"><b>${esc(x.m.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span><span class="act">${x.a==="renew"?`<button class="btn sm pri" data-renew="${x.m.id}" data-f="${x.f}">Güncelle</button>`:`<button class="btn sm ok" data-tax="${x.m.id}">Ödendi</button>`}</span></div>`:`<div class="item"><span class="av">${ic("doc")}</span><span class="main" data-open="${x.k.id}" style="cursor:pointer"><b>${esc(x.k.ad)}</b><small><span class="pill p-${x.cls}">${esc(x.t)}</span> ${esc(x.s)}</small></span></div>`).join("")}</div>`;
-    h+=`</section>`;
-  }
-
-  /* son tahsilat: tek satır; tamamı Tahsilat sekmesinde */
-  const son=S.odemeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)||(b.ts||0)-(a.ts||0))[0];
-  if(son){const k=kById(son.kiraciId);h+=`<button class="card item" id="allPay" style="padding:12px 14px;background:var(--surface)"><span class="av ok">${ic("check",2)}</span><span class="main"><b style="font-weight:500">Son tahsilat: ${esc(k?k.ad:"—")}</b><small>${esc(fmtShortDate(son.tarih))} · ${TL.format(son.tutar)}</small></span><span class="side"><small style="color:var(--brand);font-weight:600">Tümü</small></span>${ic("right")}</button>`}
   $("view").innerHTML=h;
   bindCommon();
   $("bLimit").onclick=openTufe;
-  $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
-  $("kMulk")&&($("kMulk").onclick=openMulkler);
-  $("view").querySelectorAll("[data-tmsg]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMessage(b.dataset.tmsg)});
-  $("view").querySelectorAll("[data-zmsg]").forEach(b=>b.onclick=e=>{e.stopPropagation();openZamMesaj(b.dataset.zmsg)});
-  $("view").querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>{const k="o"+b.dataset.grp;ui[k]=!ui[k];const y=window.scrollY;render();window.scrollTo(0,y)});
-  $("goT")&&($("goT").onclick=()=>{ui.tYM=curYM();go("tahsilat")});
-  $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
-  $("view").querySelectorAll("[data-renew]").forEach(b=>b.onclick=()=>openMulk(b.dataset.renew,null,b.dataset.f));
-  $("view").querySelectorAll("[data-tax]").forEach(b=>b.onclick=()=>openGider(null,{tur:"Emlak vergisi",mulkId:b.dataset.tax}));
-  $("eM")&&($("eM").onclick=()=>openMulk());
   $("eK")&&($("eK").onclick=()=>openKiraci());
-  $("bYedek")&&($("bYedek").onclick=backup);
   $("bAcc")&&($("bAcc").onclick=openAccount);
-  $("allPay")&&($("allPay").onclick=()=>go("tahsilat"));
-  setFab("Tahsilat",()=>openPay());
+  $("zAll")&&($("zAll").onclick=()=>{ui.zAll=!ui.zAll;render()});
+  setFab("Kiracı",()=>openKiraci());
 }
 const fmtShort=d=>d.getDate()+" "+AYLAR[d.getMonth()];
 function payRow(o){const k=kById(o.kiraciId);return`<button class="item" data-rcpt="${o.id}"><span class="av ok">${ic("check",2)}</span><span class="main"><b>${esc(k?k.ad:"Silinmiş kiracı")}</b><small>${esc(ymLabel(o.donem))} · ${esc(fmtShortDate(o.tarih))} · ${esc(o.yontem||"")}</small></span><span class="side"><b>${TL.format(o.tutar)}</b><small>Makbuz</small></span></button>`}
@@ -809,88 +747,61 @@ function bindCommon(){
   v.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openDetail(b.dataset.open));
   v.querySelectorAll("[data-pay]").forEach(b=>b.onclick=e=>{e.stopPropagation();openPay(b.dataset.pay,b.dataset.ym)});
   v.querySelectorAll("[data-raise]").forEach(b=>b.onclick=e=>{e.stopPropagation();openRaise(b.dataset.raise)});
+  v.querySelectorAll("[data-zmsg]").forEach(b=>b.onclick=e=>{e.stopPropagation();openZamMesaj(b.dataset.zmsg)});
   v.querySelectorAll("[data-rcpt]").forEach(b=>b.onclick=()=>openReceipt(b.dataset.rcpt));
 }
 
 /* ================== KİRACILAR ================== */
 function vKiracilar(){
   const q=ui.kQ.toLocaleLowerCase("tr");
-  let list=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
-  if(ui.kAy>=0)list=list.filter(k=>{const d=sozBas(k);return d&&d.getMonth()===ui.kAy});
-  if(ui.kM)list=list.filter(k=>ui.kM==="__yok"?!k.mulkId:k.mulkId===ui.kM);
-  if(q)list=list.filter(k=>(k.ad+" "+(mById(k.mulkId)?.ad||"")+" "+(k.tel||"")).toLocaleLowerCase("tr").includes(q));
+  const base=S.kiracilar.filter(k=>ui.kFilter==="eski"?!isActive(k):isActive(k));
+  let list=base;
+  if(ui.kT)list=list.filter(k=>kTur(k)===ui.kT);
+  if(ui.kAy>=0)list=list.filter(k=>{const r=nextRaise(k);return r&&r.tarih.getMonth()===ui.kAy});
+  if(q)list=list.filter(k=>(k.ad+" "+kAdres(k)+" "+(k.tel||"")).toLocaleLowerCase("tr").includes(q));
   list.sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
-  const n={aktif:S.kiracilar.filter(isActive).length,borclu:S.kiracilar.filter(k=>isActive(k)&&balance(k)>0).length,eski:S.kiracilar.filter(k=>!isActive(k)).length};
-  let h=`<div class="seg" role="tablist">${[["aktif","Aktif"],["borclu","Borçlu"],["eski","Çıkanlar"]].map(([k,l])=>`<button data-f="${k}" class="${ui.kFilter===k?"on":""}">${l} <span class="num" style="opacity:.6">${n[k]}</span></button>`).join("")}</div>`;
-  {const base=S.kiracilar.filter(k=>ui.kFilter==="aktif"?isActive(k):ui.kFilter==="borclu"?isActive(k)&&balance(k)>0:!isActive(k));
-   const cnt=Array(12).fill(0);base.forEach(k=>{const d=sozBas(k);if(d)cnt[d.getMonth()]++});
-   h+=`<div class="sechd" style="margin-bottom:-6px"><h2>Zam ayı</h2>${ui.kAy>=0?`<button data-ay="-1">Temizle</button>`:""}</div><div class="chips"><button class="chip ${ui.kAy<0?"on":""}" data-ay="-1">Tüm aylar</button>${AYK.map((a,i)=>`<button class="chip ${ui.kAy===i?"on":""}" data-ay="${i}" ${cnt[i]?"":'style="opacity:.45"'}>${a}${cnt[i]?` <span class="num" style="opacity:.6">${cnt[i]}</span>`:""}</button>`).join("")}</div>`;}
-  if(S.mulkler.length)h+=`<div class="fld"><select id="kM" aria-label="Mülk filtresi"><option value="">Tüm mülkler</option>${opt(S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>[m.id,m.ad]),ui.kM||"")}<option value="__yok"${ui.kM==="__yok"?" selected":""}>Mülk seçilmemiş</option></select></div>`;
-  h+=`<input class="search" id="kq" type="search" placeholder="İsim, mülk veya telefon ara" value="${esc(ui.kQ)}">`;
-  if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?(ui.kAy>=0?`${AYLAR[ui.kAy]} ayında zammı olan kiracı yok.`:"Arama veya filtreyi değiştir."):"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
-  else h+=`<div class="card list">${list.map(k=>{
-    const b=balance(k),m=mById(k.mulkId),ps=isActive(k)?periodState(k,curYM()):null;
-    let pill=!isActive(k)?`<span class="pill p-mute">Çıktı ${esc(fmtShortDate(k.cikis))}</span>`:b>0?`<span class="pill p-bad">${TL.format(b)} borç</span>`:ps&&ps.st==="paid"?`<span class="pill p-ok">Bu ay ödendi</span>`:`<span class="pill p-info">Ödeme günü ${payDay(k)}</span>`;
-    return`<button class="item" data-open="${k.id}"><span class="av ${b>0&&isActive(k)?"bad":""}">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc(m?m.ad:"Mülk seçilmedi")} · ${TL.format(k.kira||0)}/ay${(()=>{const r=nextRaise(k);return r?" · zam "+(r.gun<0?"gecikti":r.gun<=45?r.gun+" gün":fmtShortDate(toISO(r.tarih))):""})()}</small></span><span class="side">${pill}</span></button>`}).join("")}</div>`;
-  /* mülkler */
-  h+=`<section class="sec"><div class="sechd"><h2>Mülkler</h2><button id="addM">+ Mülk ekle</button></div>`;
-  if(!S.mulkler.length)h+=`<div class="card empty" style="padding:18px">Daire, dükkân gibi mülklerini eklersen doluluk ve mülk bazında gelir-gider raporu görürsün.</div>`;
-  else h+=`<div class="card list">${S.mulkler.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).map(m=>{const k=S.kiracilar.find(x=>x.mulkId===m.id&&isActive(x));return`<button class="item" data-mulk="${m.id}"><span class="av">${ic("building")}</span><span class="main"><b>${esc(m.ad)}</b><small>${esc(m.tur||"Konut")}${(()=>{const d=parseISO(m.dask);if(!d)return m.tur==="Konut"||!m.tur?" · DASK girilmedi":"";const g=daysBetween(today(),d);return g<0?" · <span class=\"pill p-bad\">DASK bitti</span>":g<=30?` · <span class="pill p-warn">DASK ${g} gün</span>`:" · DASK "+esc(fmtShortDate(m.dask))})()}</small></span><span class="side">${k?`<span class="pill p-ok">Dolu</span><small style="display:block">${esc(k.ad)}</small>`:`<span class="pill p-warn">Boş</span>`}</span></button>`}).join("")}</div>`;
-  h+=`</section>`;
+  const nA=S.kiracilar.filter(isActive).length,nE=S.kiracilar.length-nA;
+  let h=`<div class="seg">${[["aktif","Aktif",nA],["eski","Çıkanlar",nE]].map(([k,l,n])=>`<button data-f="${k}" class="${(ui.kFilter==="eski"?"eski":"aktif")===k?"on":""}">${l} <span class="num" style="opacity:.6">${n}</span></button>`).join("")}</div>`;
+  h+=`<div class="chips" style="margin:0;padding:0"><button class="chip ${!ui.kT?"on":""}" data-kt="">Tümü</button>${TURLER.map(t=>{const n=base.filter(k=>kTur(k)===t).length;return`<button class="chip ${ui.kT===t?"on":""}" data-kt="${t}" ${n?"":'style="opacity:.45"'}>${t} <span class="num" style="opacity:.6">${n}</span></button>`}).join("")}</div>`;
+  h+=`<div class="g2"><input class="search" id="kq" type="search" placeholder="İsim veya adres ara" value="${esc(ui.kQ)}"><select class="search" id="kAy" aria-label="Zam ayı">${opt([["-1","Zam ayı: tümü"],...AYLAR.map((a,i)=>[String(i),a+" zammı"])],String(ui.kAy))}</select></div>`;
+  if(!list.length)h+=`<div class="card empty"><b>${S.kiracilar.length?"Sonuç yok":"Henüz kiracı yok"}</b>${S.kiracilar.length?"Arama veya filtreyi değiştir.":"Sağ alttaki butondan ilk kiracını ekle."}</div>`;
+  else h+=`<div class="card list">${list.map(k=>{const r=nextRaise(k);
+    return`<button class="item" data-open="${k.id}"><span class="av">${esc(initials(k.ad))}</span><span class="main"><b>${esc(k.ad)}</b><small>${esc([kAdres(k),kTur(k)].filter(Boolean).join(" · "))}</small></span><span class="side"><b>${TL.format(k.kira||0)}</b><small>${isActive(k)?(r?(r.gun<=60?`<span class="pill p-${r.gun<0?"bad":"warn"}">zam ${r.gun<0?"gecikti":r.gun+" gün"}</span>`:"zam "+esc(fmtShortDate(toISO(r.tarih)))):""):"çıktı "+esc(fmtShortDate(k.cikis))}</small></span></button>`}).join("")}</div>`;
   $("view").innerHTML=h;
   $("view").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ui.kFilter=b.dataset.f;render()});
-  $("view").querySelectorAll("[data-ay]").forEach(b=>b.onclick=()=>{ui.kAy=+b.dataset.ay;render()});
-  $("kM")&&($("kM").onchange=()=>{ui.kM=$("kM").value;render()});
-  {const on=$("view").querySelector('.chip.on[data-ay]');if(on&&ui.kAy>=0)on.scrollIntoView({inline:"center",block:"nearest"})}
+  $("view").querySelectorAll("[data-kt]").forEach(b=>b.onclick=()=>{ui.kT=b.dataset.kt;render()});
+  $("kAy").onchange=()=>{ui.kAy=+$("kAy").value;render()};
   const qi=$("kq");qi.oninput=()=>{ui.kQ=qi.value;const p=qi.selectionStart;render();const n=$("kq");n.focus();n.setSelectionRange(p,p)};
-  $("addM").onclick=()=>openMulk();
-  $("view").querySelectorAll("[data-mulk]").forEach(b=>b.onclick=()=>openMulk(b.dataset.mulk));
   bindCommon();
   setFab("Kiracı",()=>openKiraci());
 }
 
 function openKiraci(id){
   const k=id?kById(id):null,d=k||{};
+  const soz=d.sozBas&&d.sozBas!==d.giris?d.sozBas:"";
   sheet(`<h3>${k?"Kiracıyı düzenle":"Yeni kiracı"}</h3>
   <div class="fld"><label for="fAd">Ad soyad</label><input id="fAd" value="${esc(d.ad)}" autocomplete="off"></div>
-  <div class="g2"><div class="fld"><label for="fTel">Telefon</label><input id="fTel" type="tel" inputmode="tel" value="${esc(d.tel)}" placeholder="05xx xxx xx xx"></div>
-  <div class="fld"><label for="fTc">TC kimlik no</label><input id="fTc" inputmode="numeric" value="${esc(d.tc)}" maxlength="11"></div></div>
-  <div class="fld"><label for="fMulk">Mülk</label><select id="fMulk"><option value="">Seçilmedi</option>${opt(S.mulkler.map(m=>[m.id,m.ad]),d.mulkId||"")}<option value="__new">+ Yeni mülk ekle…</option></select></div>
-  <div class="g2"><div class="fld"><label for="fGiris">Giriş tarihi</label><input id="fGiris" type="date" value="${esc(d.giris||todayISO())}"></div>
-  <div class="fld"><label for="fSure">Sözleşme süresi</label><select id="fSure">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(d.sure||1))}</select></div></div>
-  <div class="fld"><label for="fZP">Kira artışı</label><select id="fZP">${opt([["yillik","Her yıl (sözleşme yıldönümünde)"],["sozlesme","Sözleşme süresi dolunca"]],d.zamPer||"yillik")}</select></div>
-  <div class="fld"><label for="fSoz">Güncel sözleşme başlangıcı</label><input id="fSoz" type="date" value="${esc(d.sozBas||d.giris||"")}"><p class="hint" style="margin-top:2px">Sözleşmeyi sonradan yenilediyseniz yeni sözleşmenin tarihini yaz. Zamlar bu tarihe göre hesaplanır; değilse giriş tarihiyle aynı bırak.</p></div>
-  <div class="g2"><div class="fld"><label for="fKira">Aylık kira (₺)</label><input id="fKira" class="tl" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
-  <div class="fld"><label for="fGun">Ödeme günü</label><input id="fGun" inputmode="numeric" value="${esc(d.odemeGunu||"")}" placeholder="Giriş günü"></div></div>
-  <div class="g2"><div class="fld"><label for="fDep">Depozito (₺)</label><input id="fDep" class="tl" inputmode="decimal" value="${esc(fmtInput(d.depozito))}"></div>
-  <div class="fld"><label for="fIlk">Girişteki kira (₺)</label><input id="fIlk" class="tl" inputmode="decimal" value="${esc(fmtInput(d.ilkKira))}" placeholder="İsteğe bağlı"></div></div>
-  <div class="fld"><label for="fTakip">Ödemeleri hangi aydan itibaren takip edeyim?</label><input id="fTakip" type="month" value="${esc(d.takipBas||curYM())}"></div>
-  <p class="hint" id="fTakipH"></p>
-  ${k?"":`<label class="banner info" id="fPaidW" style="cursor:pointer"><input type="checkbox" id="fPaid" style="width:20px;height:20px;accent-color:var(--ok);flex-shrink:0"><span id="fPaidT"></span></label>`}
-  <div class="fld"><label for="fNot">Not</label><textarea id="fNot">${esc(d.not)}</textarea></div>
+  <div class="fld"><label for="fTel">Telefon</label><input id="fTel" type="tel" inputmode="tel" value="${esc(d.tel)}" placeholder="05xx xxx xx xx"></div>
+  <div class="fld"><label for="fAdr">Adres / daire</label><input id="fAdr" value="${esc(kAdres(d))}" placeholder="Örn. A Blok D:5, Çankaya"></div>
+  <div class="fld"><label>Tür</label><div class="seg" id="fTur">${TURLER.map(t=>`<button type="button" data-tur="${t}" class="${kTur(d)===t?"on":""}">${t}</button>`).join("")}</div></div>
+  <div class="g2"><div class="fld"><label for="fKira">Şu anki aylık kira (₺)</label><input id="fKira" class="tl" inputmode="decimal" value="${esc(fmtInput(d.kira))}"></div>
+  <div class="fld"><label for="fGiris">Giriş tarihi</label><input id="fGiris" type="date" value="${esc(d.giris||todayISO())}"></div></div>
+  <div class="g2"><div class="fld"><label for="fSure">Sözleşme süresi</label><select id="fSure">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(d.sure||1))}</select></div>
+  <div class="fld"><label for="fZP">Zam</label><select id="fZP">${opt([["yillik","Her yıl"],["sozlesme","Sözleşme bitince"]],d.zamPer||"yillik")}</select></div></div>
+  <div class="fld"><label for="fSoz">Sözleşme yenilendiyse son sözleşme tarihi</label><input id="fSoz" type="date" value="${esc(soz)}"><p class="hint" style="margin-top:2px">Boş bırakırsan zamlar giriş tarihine göre hesaplanır.</p></div>
+  <div class="fld"><label for="fNot">Not</label><textarea id="fNot" placeholder="İsteğe bağlı">${esc(d.not)}</textarea></div>
   <p class="err" id="fErr"></p>
-  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="fSave">Kaydet</button></div>`,(q,close)=>{
-    q("#fMulk").onchange=()=>{if(q("#fMulk").value==="__new"){openMulk(null,m=>{const s=q("#fMulk");s.insertAdjacentHTML("afterbegin",`<option value="${esc(m.id)}">${esc(m.ad)}</option>`);s.value=m.id})}};
-    const takipInfo=()=>{
-      const t=q("#fTakip").value||curYM(),kira=parseMoney(q("#fKira").value);
-      let n=0,ym=t;while(ym<curYM()&&n<600){n++;ym=addMonths(ym,1)}
-      const el=q("#fTakipH");
-      if(n>0){el.style.color="var(--warn)";el.innerHTML=`Bu ayarla <b>${n} geçmiş ay</b> takibe girer. Ödemelerini tek tek girmezsen yaklaşık <b>${TL.format(n*kira)}</b> borç gibi görünür. Geçmiş ödemeleri girmeyeceksen <b>bu ayı (${esc(ymLabel(curYM()))})</b> seç; önceki aylar ödenmiş sayılır.`}
-      else{el.style.color="";el.textContent="Bu aydan önceki kiralar ödenmiş kabul edilir. Geçmişten gelen bir kiracıyı ekliyorsan böyle bırakman yeterli."}
-    };
-    const paidInfo=()=>{const w=q("#fPaidW");if(!w)return;const t=q("#fTakip").value||curYM(),kira=parseMoney(q("#fKira").value);w.hidden=!(t<=curYM()&&kira>0);q("#fPaidT").innerHTML=`<b>${esc(AYLAR[NOW.getMonth()])} kirası zaten alındı</b> · ${TL.format(kira)} ödeme olarak kaydedilsin, borç görünmesin`};
-    q("#fTakip").addEventListener("input",()=>{takipInfo();paidInfo()});q("#fKira").addEventListener("input",()=>{takipInfo();paidInfo()});takipInfo();paidInfo();
+  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="fSave">Kaydet</button></div>`,(q,close,ov)=>{
+    let tur=kTur(d);
+    ov.querySelectorAll("[data-tur]").forEach(b=>b.onclick=()=>{tur=b.dataset.tur;ov.querySelectorAll("[data-tur]").forEach(x=>x.classList.toggle("on",x===b))});
     q("#fSave").onclick=()=>{
-      const ad=q("#fAd").value.trim(),kira=parseMoney(q("#fKira").value),giris=q("#fGiris").value;
+      const ad=q("#fAd").value.trim(),kira=parseMoney(q("#fKira").value),giris=q("#fGiris").value,sbv=q("#fSoz").value;
       if(!ad){q("#fErr").textContent="Ad soyad gerekli.";return}
       if(!giris){q("#fErr").textContent="Giriş tarihi gerekli.";return}
       if(!(kira>0)){q("#fErr").textContent="Aylık kirayı yaz.";return}
-      const gun=parseInt(q("#fGun").value,10);
-      const mulk=q("#fMulk").value==="__new"?"":q("#fMulk").value;
-      const sbv=q("#fSoz")?q("#fSoz").value:"";
-      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO()}),zamPer:q("#fZP").value,ilkKira:parseMoney(q("#fIlk").value)||"",...(sbv&&sbv!==giris?{sozBas:sbv}:{sozBas:""}),ad,tel:q("#fTel").value.trim(),tc:q("#fTc").value.trim(),mulkId:mulk,giris,sure:+q("#fSure").value,kira,odemeGunu:gun>=1&&gun<=31?gun:"",depozito:parseMoney(q("#fDep").value)||"",takipBas:q("#fTakip").value||curYM(),not:q("#fNot").value.trim()};
-      if(k)Object.assign(k,rec);else{S.kiracilar.push(rec);
-        if(q("#fPaid")&&q("#fPaid").checked&&!q("#fPaidW").hidden&&rec.takipBas<=curYM())S.odemeler.push({id:uid(),kiraciId:rec.id,donem:curYM(),tutar:kira,tarih:todayISO(),yontem:"Havale / EFT",not:"Kiracı eklenirken kaydedildi",ts:Date.now(),no:nextReceiptNo()});}
+      if(sbv&&sbv<giris){q("#fErr").textContent="Son sözleşme tarihi girişten önce olamaz.";return}
+      const rec={...(k||{id:uid(),gecmis:[],olusturma:todayISO(),takipBas:curYM()}),ad,tel:q("#fTel").value.trim(),adres:q("#fAdr").value.trim(),tur,kira,giris,sure:+q("#fSure").value,zamPer:q("#fZP").value,sozBas:sbv&&sbv!==giris?sbv:"",not:q("#fNot").value.trim()};
+      if(k)Object.assign(k,rec);else S.kiracilar.push(rec);
       save();close();render();toast(k?"Güncellendi":"Kiracı eklendi");
       if(k)refreshDetail(k.id);
     };
@@ -961,65 +872,51 @@ let detailClose=null,detailId=null;
 function refreshDetail(id){if(detailClose&&detailId===id){detailClose();openDetail(id)}}
 function openDetail(id){
   const k=kById(id);if(!k)return;
-  const m=mById(k.mulkId),b=balance(k),c=contractInfo(k),L=limitNow(),r=raiseInfo(k);
-  const ps=periods(k),last=ps.slice(-12);
-  const allPays=S.odemeler.filter(o=>o.kiraciId===k.id).sort((a,b)=>b.tarih.localeCompare(a.tarih));
-  const grid=last.map(ym=>{const s=periodState(k,ym);const cls=s.st==="paid"?"paid":s.st==="late"?"owed":s.st==="partlate"||s.st==="part"?"part":"";const[y,mo]=ym.split("-");return`<button data-ym="${ym}" class="${cls}" title="${esc(ymLabel(ym))}">${AYK[+mo-1]}<small>${s.st==="paid"?"✓":s.paid?Math.round(s.paid/1000)+"b":"’"+y.slice(2)}</small></button>`}).join("");
+  const c=contractInfo(k),L=limitNow(),r=isActive(k)?nextRaise(k):null;
   const hist=(k.gecmis||[]).slice().sort((a,b)=>b.tarih.localeCompare(a.tarih));
+  const histRow=h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":h.tur==="gecmis"?" · geçmiş kayıt":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`;
+  const max=Math.floor((k.kira||0)*(1+L.tufe/100));
   detailId=id;
   detailClose=sheet(`
-  <div style="display:flex;gap:12px;align-items:center"><span class="item" style="padding:0;width:auto"><span class="av ${b>0?"bad":""}" style="width:52px;height:52px;font-size:18px">${esc(initials(k.ad))}</span></span><div style="min-width:0;flex:1"><h3 style="overflow-wrap:anywhere">${esc(k.ad)}</h3><p class="sub" style="margin:2px 0 0">${esc(m?m.ad:"Mülk seçilmedi")}${isActive(k)?"":" · Çıktı"}</p></div></div>
-  <div class="kpis"><div class="card kpi ${b>0?"bad":"ok"}"><b class="num">${TL.format(b)}</b><span>${b>0?"Gecikmiş borç":"Borcu yok"}</span></div><div class="card kpi"><b class="num">${TL.format(k.kira||0)}</b><span>Aylık kira · gün ${payDay(k)}</span></div></div>
-  ${!r&&nextRaise(k)?`<div class="banner info">${ic("up")}<span>Sonraki zam: ${esc(fmtDate(toISO(nextRaise(k).tarih)))} (${nextRaise(k).gun} gün). Şu anki sınırla en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-zm>Bildir</button><button data-r>Hesapla</button></div>`:""}${r?`<div class="banner info">${ic("up")}<span>${r.gun<0?"Zam zamanı geldi":r.gun+" gün sonra yıldönümü"}. Sınır %${PCT.format(L.tufe)} → en fazla ${TL.format(Math.floor((k.kira||0)*(1+L.tufe/100)))}</span><button data-zm>Bildir</button><button data-r>Zam yap</button></div>`:""}
-  <div class="btns grow">${isActive(k)?`<button class="btn ok" id="dPay">${ic("wallet")}Tahsilat</button>`:""}${k.tel?`<a class="btn" href="tel:${esc(telLink(k.tel))}">${ic("phone")}Ara</a><button class="btn wa" id="dMsg">${ic("wa")}Bildirim</button>`:""}</div>
-  ${ps.length?`<div class="sec"><div class="sechd"><h2>Ödemeler · son ${last.length} ay</h2></div><div class="grid12">${grid}</div><p class="hint">Bir aya dokunarak o ayın ödemesini gir. Yeşil ödendi, turuncu kısmi, kırmızı gecikmiş.</p></div>`:""}
+  <div style="display:flex;gap:12px;align-items:center"><span class="av" style="width:52px;height:52px;font-size:18px;border-radius:14px;display:grid;place-items:center;font-weight:700;background:var(--brand-soft);color:var(--brand);flex-shrink:0">${esc(initials(k.ad))}</span><div style="min-width:0;flex:1"><h3 style="overflow-wrap:anywhere">${esc(k.ad)}</h3><p class="sub" style="margin:2px 0 0">${esc([kAdres(k),kTur(k)].filter(Boolean).join(" · "))}${isActive(k)?"":" · Çıktı"}</p></div></div>
+  <div class="kpis"><div class="card kpi"><b class="num">${TL.format(k.kira||0)}</b><span>Aylık kira</span></div><div class="card kpi ${r&&r.gun<0?"bad":""}"><b class="num">${r?esc(fmtShortDate(toISO(r.tarih))):"—"}</b><span>${r?(r.gun<0?`Zam ${-r.gun} gün gecikti`:`Sonraki zam · ${r.gun} gün`):"Sonraki zam"}</span></div></div>
+  ${r?`<div class="banner info">${ic("up")}<span>Şu anki sınırla (%${PCT.format(L.tufe)}) yeni kira en fazla <b>${TL.format(max)}</b></span></div>`:""}
+  ${isActive(k)?`<div class="btns grow"><button class="btn pri" id="dRaise">${ic("up")}Zam yap</button><button class="btn wa" id="dZm">${ic("wa")}Zam bildirimi</button></div>`:""}
+  ${k.tel?`<div class="btns grow"><a class="btn" href="tel:${esc(telLink(k.tel))}">${ic("phone")}Ara</a><a class="btn" target="_blank" rel="noopener" href="${esc(waLink(k.tel,""))}">${ic("wa")}WhatsApp</a></div>`:""}
   <div class="sec"><div class="sechd"><h2>Bilgiler</h2></div><dl class="kv card pad">
     <dt>Telefon</dt><dd>${esc(k.tel||"—")}</dd>
-    ${k.tc?`<dt>TC no</dt><dd>${esc(k.tc)}</dd>`:""}
+    <dt>Adres</dt><dd>${esc(kAdres(k)||"—")}</dd>
+    <dt>Tür</dt><dd>${esc(kTur(k))}</dd>
     <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
-    ${k.sozBas&&k.sozBas!==k.giris?`<dt>Güncel sözleşme</dt><dd>${esc(fmtDate(k.sozBas))} · ${+k.sure||1} yıl</dd>`:""}<dt>Kira artışı</dt><dd>${k.zamPer==="sozlesme"?`Sözleşme sonunda (${+k.sure||1} yılda bir)`:"Her yıl"}</dd>
-    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))} ${c.uzama?"(kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${k.sureBas?`<small style="color:var(--muted)">${esc(fmtShortDate(k.sureBas))}'den · </small>`:""}${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
+    ${k.sozBas&&k.sozBas!==k.giris?`<dt>Son sözleşme</dt><dd>${esc(fmtDate(k.sozBas))}</dd>`:""}
+    <dt>Sözleşme</dt><dd>${+k.sure||1} yıl · zam ${k.zamPer==="sozlesme"?"sözleşme bitince":"her yıl"}</dd>
+    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))}${c.uzama?" (kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
-    <dt>Depozito</dt><dd>${k.depozito?TL.format(k.depozito):"—"}</dd>
-    <dt>Toplam tahsilat</dt><dd>${TL.format(allPays.reduce((s,o)=>s+(+o.tutar||0),0))}</dd>
     ${k.not?`<dt>Not</dt><dd style="text-align:left;grid-column:1/-1;white-space:pre-wrap">${esc(k.not)}</dd>`:""}
   </dl></div>
-  ${c&&(c.bes||c.on)?`<div class="banner warn" style="flex-wrap:wrap">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span>${k.sozBas&&k.sozBas!==k.giris&&k.sureBas!==k.sozBas?`<button id="dReset">Yeni sözleşmeden say</button>`:""}</div>`:""}
+  ${c&&(c.bes||c.on)?`<div class="banner warn" style="flex-wrap:wrap">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span>${k.sozBas&&k.sozBas!==k.giris&&k.sureBas!==k.sozBas?`<button id="dReset">Son sözleşmeden say</button>`:""}</div>`:""}
+  <div class="sec"><div class="sechd"><h2>Kira geçmişi</h2><button id="dPast">+ Geçmiş zam</button></div>
+  ${hist.length?`<div class="card list" id="dHist">${hist.slice(0,3).map(histRow).join("")}</div>${hist.length>3?`<button class="btn ghost" id="dHistAll">Tümünü göster (${hist.length})</button>`:""}`:`<div class="card empty" style="padding:14px;text-align:left">Henüz zam kaydı yok. Eski zamları eklemek istersen "+ Geçmiş zam"a dokun.</div>`}</div>
   ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${z.sure} yıl</b><small>${z.kira?TL.format(z.kira)+"/ay":"kira girilmemiş"}${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
-  ${hist.length||(k.giris&&k.giris.slice(0,4)<String(NOW.getFullYear()))?`<div class="sec"><div class="sechd"><h2>Kira geçmişi</h2><button id="dPast">+ Geçmiş zam ekle</button></div>
-  ${k.ilkKira?`<p class="hint" style="margin:-4px 0 0">Girişte (${esc(fmtShortDate(k.giris))}) kira: <b>${TL.format(k.ilkKira)}</b></p>`:""}
-  ${!hist.length?`<div class="card empty" style="padding:14px;text-align:left">${esc(k.giris.slice(0,4))}'den bu yana yapılan zamları eklersen kira geçmişi eksiksiz olur. Bu isteğe bağlı; borç ve tahsilat hesabı bundan etkilenmez.</div>`:""}
-  ${hist.length?`<div class="card list">${hist.slice(0,3).map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}${h.tur==="sozlesme"?" · yeni sözleşme":h.tur==="gecmis"?" · geçmiş kayıt":""}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("")}</div>${hist.length>3?`<button class="btn ghost" id="dHistAll">Tümünü göster (${hist.length})</button>`:""}`:""}${hist.length?`<button class="btn ghost" id="dZm">Zam bildirimi gönder</button>`:""}</div>`:""}
-  ${allPays.length?`<div class="sec"><div class="sechd"><h2>Tahsilatlar · ${allPays.length}</h2>${allPays.length>3?`<button id="dPaysAll">Tümünü göster</button>`:""}</div><div class="card list" id="dPays">${allPays.slice(0,3).map(payRow).join("")}</div></div>`:""}
-  <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dRaise">Zam yap</button><button class="btn" id="dSoz">Yeni sözleşme</button>`:`<button class="btn" id="dBack">Geri al</button>`}</div>
-  <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:""}<button class="btn danger" id="dDel">Kiracıyı sil</button></div>`,(q,close,ov)=>{
-    q("#dSoz")&&(q("#dSoz").onclick=()=>openSozlesme(k.id));
-    q("#dPast")&&(q("#dPast").onclick=()=>openPastRaise(k.id));
-    q("#dHistAll")&&(q("#dHistAll").onclick=()=>{const list=q("#dHistAll").previousElementSibling;list.innerHTML=hist.map(h=>`<div class="item"><span class="av">${ic("up")}</span><span class="main"><b>${TL.format(h.eski)} → ${TL.format(h.yeni)}</b><small>${esc(fmtDate(h.tarih))}</small></span><span class="side"><b>%${PCT.format(h.oran)}</b></span></div>`).join("");q("#dHistAll").remove()});
-    const sh=ov.querySelector(".sheet");
-    q("#dPay")&&(q("#dPay").onclick=()=>openPay(k.id));
-    q("#dMsg")&&(q("#dMsg").onclick=()=>openMessage(k.id));
-    q("#dReset")&&(q("#dReset").onclick=()=>{k.sureBas=k.sozBas;save();render();refreshDetail(k.id);toast("5/10 yıl süresi "+fmtDate(k.sozBas)+" tarihinden sayılıyor")});
-    q("[data-r]")&&(q("[data-r]").onclick=()=>openRaise(k.id));
-    q("[data-zm]")&&(q("[data-zm]").onclick=()=>openZamMesaj(k.id));
-    q("#dZm")&&(q("#dZm").onclick=()=>openZamMesaj(k.id));
+  <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dSoz">Yeni sözleşme</button>`:""}</div>
+  <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:`<button class="btn" id="dBack">Çıkışı geri al</button>`}<button class="btn danger" id="dDel">Sil</button></div>`,(q,close)=>{
     q("#dRaise")&&(q("#dRaise").onclick=()=>openRaise(k.id));
+    q("#dZm")&&(q("#dZm").onclick=()=>openZamMesaj(k.id));
     q("#dEdit").onclick=()=>openKiraci(k.id);
-    sh.querySelectorAll(".grid12 button").forEach(b=>b.onclick=()=>openPay(k.id,b.dataset.ym));
-    const bindR=()=>sh.querySelectorAll("[data-rcpt]").forEach(b=>b.onclick=()=>openReceipt(b.dataset.rcpt));bindR();
-    q("#dPaysAll")&&(q("#dPaysAll").onclick=()=>{q("#dPays").innerHTML=allPays.map(payRow).join("");q("#dPaysAll").remove();bindR()});
+    q("#dSoz")&&(q("#dSoz").onclick=()=>openSozlesme(k.id));
+    q("#dPast").onclick=()=>openPastRaise(k.id);
+    q("#dHistAll")&&(q("#dHistAll").onclick=()=>{q("#dHist").innerHTML=hist.map(histRow).join("");q("#dHistAll").remove()});
+    q("#dReset")&&(q("#dReset").onclick=()=>{k.sureBas=k.sozBas;save();render();refreshDetail(k.id);toast("5/10 yıl süresi "+fmtDate(k.sozBas)+" tarihinden sayılıyor")});
     q("#dOut")&&(q("#dOut").onclick=()=>{
-      sheet(`<h3>Çıkış kaydı</h3><p class="sub">${esc(k.ad)}</p><div class="fld"><label for="oT">Çıkış tarihi</label><input id="oT" type="date" value="${todayISO()}"></div><p class="hint">Kiracı "Çıkanlar" listesine taşınır, geçmiş kayıtları kalır.${k.depozito?` Depozito: ${TL.format(k.depozito)}.`:""}</p><div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="oOk">Kaydet</button></div>`,(q2,c2)=>{q2("#oOk").onclick=()=>{k.cikis=q2("#oT").value||todayISO();save();c2();close();render();toast("Çıkış kaydedildi")}})
+      sheet(`<h3>Çıkış kaydı</h3><p class="sub">${esc(k.ad)}</p><div class="fld"><label for="oT">Çıkış tarihi</label><input id="oT" type="date" value="${todayISO()}"></div><p class="hint">Kiracı "Çıkanlar" listesine taşınır, kayıtları silinmez.</p><div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="oOk">Kaydet</button></div>`,(q2,c2)=>{q2("#oOk").onclick=()=>{k.cikis=q2("#oT").value||todayISO();save();c2();close();render();toast("Çıkış kaydedildi")}})
     });
     q("#dBack")&&(q("#dBack").onclick=()=>{k.cikis="";save();close();render();openDetail(k.id)});
     q("#dDel").onclick=async()=>{
-      if(!await confirmSheet("Kiracı silinsin mi?",`${k.ad} ve tüm ödeme kayıtları kalıcı olarak silinir. Taşındıysa "Çıkış" kullanman daha iyi olur.`,"Sil",true))return;
+      if(!await confirmSheet("Kiracı silinsin mi?",`${k.ad} ve tüm kayıtları kalıcı olarak silinir. Taşındıysa "Çıkış kaydı" kullanman daha iyi olur.`,"Sil",true))return;
       S.kiracilar=S.kiracilar.filter(x=>x.id!==k.id);S.odemeler=S.odemeler.filter(o=>o.kiraciId!==k.id);save();close();render();toast("Silindi");
     };
   });
 }
-
-/* ---------- tahsilat ---------- */
 function openPay(kid,ym){
   const act=S.kiracilar.filter(isActive).sort((a,b)=>a.ad.localeCompare(b.ad,"tr"));
   if(!act.length&&!kid){toast("Önce bir kiracı ekle");return}
@@ -1173,11 +1070,11 @@ function openRaise(id){
   <div class="calc"><span>Yeni aylık kira</span><b id="zR"></b></div>
   <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih}"></div>
   <p class="err" id="zW"></p>
-  <p class="hint">Konut ve iş yeri kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}. Yeni kira, bu tarihten sonraki ayların tahakkukunda kullanılır.</p>
+  <p class="hint">Konut ve iş yeri kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}.</p>
   <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Uygula</button></div>
   <button class="btn ghost" id="zMsg">${ic("wa")}Kirayı değiştirmeden sadece bildirim gönder</button>`,(q,close)=>{
     q("#zMsg").onclick=()=>{close();openZamMesaj(k.id,"once")};
-    const m=mById(k.mulkId),konut=!m||m.tur!=="Arsa / diğer";
+    const konut=kTur(k)!=="Arsa";
     const upd=(from)=>{
       let o=parseMoney(q("#zO").value),y=parseMoney(q("#zY").value);
       if(from==="o"){y=Math.floor(eski*(1+o/100));q("#zY").value=fmtInput(y)}
@@ -1241,15 +1138,13 @@ function openSozlesme(id){
   <div class="g2"><div class="fld"><label for="sB">Yeni sözleşme başlangıcı</label><input id="sB" type="date" value="${todayISO()}"></div>
   <div class="fld"><label for="sS">Süre</label><select id="sS">${opt([["1","1 yıl"],["2","2 yıl"],["3","3 yıl"],["5","5 yıl"]],String(k.sure||1))}</select></div></div>
   <div class="fld"><label for="sZP">Kira artışı</label><select id="sZP">${opt([["yillik","Her yıl (sözleşme yıldönümünde)"],["sozlesme","Sözleşme süresi dolunca"]],k.zamPer||"yillik")}</select></div>
-  <div class="g2"><div class="fld"><label for="sK">Yeni aylık kira (₺)</label><input id="sK" class="tl" inputmode="decimal" value="${esc(fmtInput(eski))}"></div>
-  <div class="fld"><label for="sG">Ödeme günü</label><input id="sG" inputmode="numeric" value="${esc(k.odemeGunu||"")}" placeholder="Değişmedi"></div></div>
-  <div class="fld"><label for="sD">Depozito (₺)</label><input id="sD" class="tl" inputmode="decimal" value="${esc(fmtInput(k.depozito))}"></div>
+  <div class="fld"><label for="sK">Yeni aylık kira (₺)</label><input id="sK" class="tl" inputmode="decimal" value="${esc(fmtInput(eski))}"></div>
   <div class="fld"><label for="sN">Not</label><input id="sN" placeholder="Örn. noterde yenilendi"></div>
   <p class="hint" id="sInfo"></p>
   <label class="banner info" style="cursor:pointer;align-items:flex-start"><input type="checkbox" id="sReset" checked style="width:20px;height:20px;accent-color:var(--brand);flex-shrink:0;margin-top:1px"><span><b>5 ve 10 yıl sürelerini bu sözleşmeden başlat</b><br><small style="color:var(--muted)">İşaretlersen "5 yıl doldu / 10 yıl doldu" uyarıları yeni sözleşme tarihinden sayılır. Aynı kiracıyla yapılan yeni sözleşmenin bu süreleri sıfırlayıp sıfırlamadığı hukuken tartışmalıdır; dava gibi bir adımdan önce avukata danış.</small></span></label>
   <p class="hint">Zam yıldönümü ve sözleşme bitişi artık bu tarihe göre hesaplanır. Eski ödeme ve zam kayıtları korunur.</p>
   <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="sOk">Kaydet</button></div>`,(q,close)=>{
-    const m=mById(k.mulkId),sinirli=!m||m.tur!=="Arsa / diğer";
+    const sinirli=kTur(k)!=="Arsa";
     const info=()=>{const y=parseMoney(q("#sK").value),o=eski?(y/eski-1)*100:0;q("#sInfo").innerHTML=y&&y!==eski?`Kira ${TL.format(eski)} → <b>${TL.format(y)}</b> (%${PCT.format(o)})${sinirli&&o>L.tufe+0.005?` <span style="color:var(--bad)">· Yasal sınır %${PCT.format(L.tufe)}. Aynı kiracıyla yapılan yeni sözleşmede de bu sınır geçerli sayılabilir.</span>`:""}`:"Kira değişmiyor."};
     q("#sK").addEventListener("input",info);info();
     q("#sOk").onclick=()=>{
@@ -1260,8 +1155,6 @@ function openSozlesme(id){
       if(y!==eski){k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0,tur:"sozlesme"});k.kira=y}
       k.sozBas=t;k.sure=sure;k.zamPer=q("#sZP").value;
       if(q("#sReset").checked)k.sureBas=t;else delete k.sureBas;
-      const g=parseInt(q("#sG").value,10);if(g>=1&&g<=31)k.odemeGunu=g;
-      const dep=parseMoney(q("#sD").value);k.depozito=dep||"";
       save();close();render();refreshDetail(k.id);toast("Yeni sözleşme kaydedildi");
     };
   });
@@ -1506,15 +1399,12 @@ const standalone=()=>matchMedia("(display-mode: standalone)").matches||navigator
 function openSettings(){
   const ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
   sheet(`<h3>Ayarlar</h3>
-  <div class="sec"><div class="sechd"><h2>Ev sahibi bilgileri</h2></div><p class="hint" style="margin-top:-4px">Makbuzlarda ve mesajlarda kullanılır.</p>
+  <div class="sec"><div class="sechd"><h2>Ev sahibi bilgileri</h2></div><p class="hint" style="margin-top:-4px">Zam mesajlarının altına eklenir.</p>
   <div class="fld"><label for="sAd">Ad soyad</label><input id="sAd" value="${esc(S.ayar.ad)}"></div>
   <div class="g2"><div class="fld"><label for="sTel">Telefon</label><input id="sTel" type="tel" value="${esc(S.ayar.tel)}"></div>
   <div class="fld"><label for="sTema">Görünüm</label><select id="sTema">${opt([["auto","Telefona göre"],["light","Açık"],["dark","Koyu"]],S.ayar.tema||"auto")}</select></div></div>
   <div class="fld"><label for="sIban">IBAN</label><input id="sIban" value="${esc(S.ayar.iban)}" placeholder="TR.."></div>
   <button class="btn pri" id="sSave">Bilgileri kaydet</button></div>
-
-  <div class="sec"><div class="sechd"><h2>Güvenlik</h2></div>
-  <div class="card list"><button class="item" id="sPin"><span class="av">${ic("check")}</span><span class="main"><b>${S.ayar.pinHash?"PIN kilidi açık":"PIN kilidi"}</b><small>${S.ayar.pinHash?"Değiştirmek veya kapatmak için dokun":"Uygulama açılırken 4 haneli şifre sorulsun"}</small></span>${ic("right")}</button></div></div>
 
   ${CLOUD.api||FIREBASE_CONFIG?`<div class="sec"><div class="sechd"><h2>Hesap ve bulut</h2></div>
   <div class="card list"><button class="item" id="sAcc"><span class="av ${CLOUD.ready?"ok":"warn"}">${ic(CLOUD.ready?"check":"alert",2)}</span><span class="main"><b>${CLOUD.user?esc(CLOUD.user.email||"Giriş yapıldı"):"Giriş yapılmadı"}</b><small>${CLOUD.user?esc(cloudLabel()):"Giriş yap, veriler buluta yedeklensin"}</small></span>${ic("right")}</button></div></div>`:""}
@@ -1522,16 +1412,16 @@ function openSettings(){
   <div class="sec"><div class="sechd"><h2>Yedek ve veri</h2></div>
   <p class="hint" style="margin-top:-4px">${CLOUD.ready?"Kayıtların bulutta saklanıyor. Yine de istersen ek bir yedek dosyası alabilirsin.":"Kayıtlar şu an sadece bu telefonda saklanıyor. Telefon değişirse veya tarayıcı verisi silinirse kaybolur. Ayda bir yedek alıp WhatsApp'ta kendine ya da e-postana gönder."}${S.ayar.sonYedek?` Son yedek: ${esc(fmtDate(S.ayar.sonYedek))}.`:""}</p>
   <div class="btns grow"><button class="btn pri" id="sBak">Yedek al</button><button class="btn" id="sRes">Yedekten yükle</button></div>
-  <div class="btns grow"><button class="btn" id="sImp">Excel'den kiracı aktar</button><button class="btn" id="sTpl">Excel şablonu</button></div>
+  <div class="btns grow"><button class="btn" id="sExp">Excel'e indir</button><button class="btn" id="sImp">Excel'den aktar</button></div>
+  <button class="btn ghost" id="sTpl">Boş Excel şablonu</button>
   <input type="file" id="fRes" hidden><input type="file" id="fImp" accept=".xlsx,.xls,.csv" hidden></div>
 
   <div class="sec"><div class="sechd"><h2>Uygulama</h2></div>
   ${standalone()?`<div class="banner info">${ic("check",2)}<span>Uygulama ana ekrana kurulu.</span></div>`:deferredInstall?`<button class="btn pri" id="sInst">Ana ekrana kur</button>`:`<div class="banner info"><span>${ios?"Ana ekrana eklemek için Safari'de alttaki Paylaş düğmesine, sonra <b>Ana Ekrana Ekle</b>'ye dokun.":"Ana ekrana eklemek için Chrome menüsünden (⋮) <b>Ana ekrana ekle</b> veya <b>Uygulamayı yükle</b>'yi seç."}</span></div>`}
-  <p class="hint">Kira Defteri ${VERSION} · İnternet olmadan da çalışır. Kira artış sınırı her ay otomatik güncellenir.</p>
+  <p class="hint">Kira Defteri ${VERSION} · İnternet olmadan da çalışır. Yasal artış sınırı her ay otomatik güncellenir.</p>
   <button class="btn danger" id="sWipe">Tüm verileri sil</button></div>`,(q,close)=>{
     q("#sSave").onclick=()=>{S.ayar.ad=q("#sAd").value.trim();S.ayar.tel=q("#sTel").value.trim();S.ayar.iban=q("#sIban").value.replace(/\s+/g," ").trim().toUpperCase();S.ayar.tema=q("#sTema").value;applyTheme();save();toast("Kaydedildi")};
     q("#sTema").onchange=()=>{S.ayar.tema=q("#sTema").value;applyTheme();save()};
-    q("#sPin").onclick=()=>{close();openPinSetup()};
     q("#sAcc")&&(q("#sAcc").onclick=()=>{close();openAccount()});
     q("#sBak").onclick=backup;
     q("#sRes").onclick=()=>q("#fRes").click();
@@ -1539,9 +1429,10 @@ function openSettings(){
     q("#sImp").onclick=()=>q("#fImp").click();
     q("#fImp").onchange=e=>{const f=e.target.files[0];if(f)importExcel(f,close);e.target.value=""};
     q("#sTpl").onclick=downloadTemplate;
+    q("#sExp").onclick=exportExcel;
     q("#sInst")&&(q("#sInst").onclick=async()=>{deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;close()});
     q("#sWipe").onclick=async()=>{
-      if(!await confirmSheet("Tüm veriler silinsin mi?",CLOUD.user?"Kiracılar, tahsilatlar, giderler ve ayarlar bu telefondan VE buluttan kalıcı olarak silinir. Önce yedek almanı öneririm.":"Kiracılar, tahsilatlar, giderler ve ayarlar bu telefondan kalıcı olarak silinir. Önce yedek almanı öneririm.","Hepsini sil",true))return;
+      if(!await confirmSheet("Tüm veriler silinsin mi?",CLOUD.user?"Tüm kiracılar ve ayarlar bu telefondan VE buluttan kalıcı olarak silinir. Önce yedek almanı öneririm.":"Tüm kiracılar ve ayarlar bu telefondan kalıcı olarak silinir. Önce yedek almanı öneririm.","Hepsini sil",true))return;
       {const u=S.cloudUid,p=S.ayar.pinHash;S=blank();S.cloudUid=u;S.ayar.pinHash=p}save();closeAllSheets();render();toast("Tüm veriler silindi");
     };
   });
@@ -1595,20 +1486,14 @@ async function saveXlsx(name,sheets){
     await shareOrDownload(new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),name);
   }catch(e){toast("Excel hazırlanamadı. İnternet bağlantısını kontrol et.")}
 }
-function exportExcel(yil){
-  const mAd=id=>mById(id)?.ad||"";
-  const k=[["Ad Soyad","Telefon","TC","Mülk","Giriş Tarihi","Güncel Sözleşme","Sözleşme (yıl)","Aylık Kira","Ödeme Günü","Depozito","Durum","Çıkış","Gecikmiş Borç","Not"]];
-  S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>k.push([x.ad,x.tel||"",x.tc||"",mAd(x.mulkId),trDate(x.giris),trDate(x.sozBas||x.giris),+x.sure||1,+x.kira||0,payDay(x),+x.depozito||"",isActive(x)?"Aktif":"Çıktı",trDate(x.cikis),balance(x),x.not||""]));
-  const t=[["Makbuz No","Ödeme Tarihi","Kiracı","Mülk","Dönem","Tutar","Yöntem","Not"]];
-  S.odemeler.filter(o=>o.tarih.startsWith(yil)).sort((a,b)=>a.tarih.localeCompare(b.tarih)).forEach(o=>{const x=kById(o.kiraciId);t.push([o.no||"",trDate(o.tarih),x?x.ad:"",x?mAd(x.mulkId):"",ymLabel(o.donem),+o.tutar,o.yontem||"",o.not||""])});
-  const g=[["Tarih","Tür","Mülk","Açıklama","Tutar"]];
-  S.giderler.filter(x=>x.tarih.startsWith(yil)).sort((a,b)=>a.tarih.localeCompare(b.tarih)).forEach(x=>g.push([trDate(x.tarih),x.tur,mAd(x.mulkId),x.aciklama||"",+x.tutar]));
-  const a=[["Ay","Tahsilat","Gider","Net"]];let ti=0,te=0;
-  for(let i=0;i<12;i++){const ym=yil+"-"+pad(i+1);const inc=S.odemeler.filter(o=>o.tarih.startsWith(ym)).reduce((s,o)=>s+(+o.tutar||0),0);const ex=S.giderler.filter(x=>x.tarih.startsWith(ym)).reduce((s,x)=>s+(+x.tutar||0),0);ti+=inc;te+=ex;a.push([AYLAR[i],inc,ex,inc-ex])}
-  a.push(["Toplam",ti,te,ti-te]);
-  saveXlsx(`kira-raporu-${yil}.xlsx`,[["Aylık Özet",a],["Tahsilatlar",t],["Giderler",g],["Kiracılar",k]]);
+function exportExcel(){
+  const k=[["Ad Soyad","Telefon","Adres / Daire","Tür","Giriş Tarihi","Son Sözleşme","Sözleşme (yıl)","Zam","Aylık Kira","Sonraki Zam","Durum","Çıkış","Not"]];
+  S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>{const r=nextRaise(x);k.push([x.ad,x.tel||"",kAdres(x),kTur(x),trDate(x.giris),trDate(x.sozBas||x.giris),+x.sure||1,x.zamPer==="sozlesme"?"Sözleşme bitince":"Her yıl",+x.kira||0,r?trDate(toISO(r.tarih)):"",isActive(x)?"Aktif":"Çıktı",trDate(x.cikis),x.not||""])});
+  const z=[["Kiracı","Tarih","Önceki Kira","Yeni Kira","Oran %"]];
+  S.kiracilar.forEach(x=>(x.gecmis||[]).forEach(h=>z.push([x.ad,trDate(h.tarih),+h.eski,+h.yeni,+h.oran])));
+  saveXlsx(`kiracilar-${todayISO()}.xlsx`,[["Kiracılar",k],["Zam Geçmişi",z]]);
 }
-function downloadTemplate(){saveXlsx("kiraci-sablonu.xlsx",[["Kiracılar",[["Ad Soyad","Mülk","Giriş Tarihi","Kira","Depozito","Ödeme Günü","Telefon","Not"],["Örnek Kişi","A Blok No 3","15.03.2023",15000,30000,5,"0555 000 00 00","Bu satırı silip kendi kiracılarını yaz"]]]])}
+function downloadTemplate(){saveXlsx("kiraci-sablonu.xlsx",[["Kiracılar",[["Ad Soyad","Adres / Daire","Tür","Giriş Tarihi","Aylık Kira","Telefon","Not"],["Örnek Kişi","A Blok D:3","Konut","15.03.2023",15000,"0555 000 00 00","Bu satırı silip kendi kiracılarını yaz"]]]])}
 const norm=s=>String(s??"").toLocaleLowerCase("tr").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/ı/g,"i").replace(/[^a-z0-9]/g,"");
 async function importExcel(file,closeSettings){
   let X;try{X=await loadXLSX()}catch(e){toast("Excel okuyucu yüklenemedi. İnternet gerekli.");return}
@@ -1617,20 +1502,20 @@ async function importExcel(file,closeSettings){
   let hi=rows.findIndex(r=>r.some(c=>/ad|isim|kiraci/.test(norm(c))));if(hi<0){toast("Başlık satırı bulunamadı");return}
   const hd=rows[hi].map(norm);
   const col=(...keys)=>hd.findIndex(h=>keys.some(k=>h.includes(k)));
-  const c={ad:col("adsoyad","isim","kiraci","ad"),mulk:col("mulk","daire","adres"),giris:col("giris","baslangic"),kira:col("kira","tutar"),dep:col("depozito","teminat"),gun:col("odemegun","gun"),tel:col("telefon","tel","gsm"),not:col("not","aciklama"),sure:col("sozlesme","sure"),cikis:col("cikis")};
+  const c={ad:col("adsoyad","isim","kiraci","ad"),tur:col("tur","tip"),mulk:col("mulk","daire","adres"),giris:col("giris","baslangic"),kira:col("kira","tutar"),dep:col("depozito","teminat"),gun:col("odemegun","gun"),tel:col("telefon","tel","gsm"),not:col("not","aciklama"),sure:col("sozlesme","sure"),cikis:col("cikis")};
   const out=[];
   for(const r of rows.slice(hi+1)){
     const ad=String(r[c.ad]??"").trim();if(!ad||/^ornek/.test(norm(ad)))continue;
-    out.push({ad,mulk:c.mulk>=0?String(r[c.mulk]||"").trim():"",giris:c.giris>=0?parseAnyDate(r[c.giris]):"",kira:c.kira>=0?parseMoney(r[c.kira]):0,dep:c.dep>=0?parseMoney(r[c.dep]):0,gun:c.gun>=0?parseInt(r[c.gun],10)||"":"",tel:c.tel>=0?String(r[c.tel]||"").trim():"",not:c.not>=0?String(r[c.not]||"").trim():"",sure:c.sure>=0?parseInt(r[c.sure],10)||1:1,cikis:c.cikis>=0?parseAnyDate(r[c.cikis]):""});
+    out.push({ad,tur:c.tur>=0?String(r[c.tur]||"").trim():"",mulk:c.mulk>=0?String(r[c.mulk]||"").trim():"",giris:c.giris>=0?parseAnyDate(r[c.giris]):"",kira:c.kira>=0?parseMoney(r[c.kira]):0,dep:c.dep>=0?parseMoney(r[c.dep]):0,gun:c.gun>=0?parseInt(r[c.gun],10)||"":"",tel:c.tel>=0?String(r[c.tel]||"").trim():"",not:c.not>=0?String(r[c.not]||"").trim():"",sure:c.sure>=0?parseInt(r[c.sure],10)||1:1,cikis:c.cikis>=0?parseAnyDate(r[c.cikis]):""});
   }
   if(!out.length){toast("Aktarılacak satır bulunamadı");return}
   const bad=out.filter(o=>!o.giris||!(o.kira>0)).length;
-  if(!await confirmSheet(`${out.length} kiracı aktarılsın mı?`,`${bad?bad+" satırda giriş tarihi veya kira eksik; onları sonra düzenleyebilirsin. ":""}Aynı isimde kayıt varsa atlanır. Ödeme takibi bu aydan başlar.`,"Aktar",false))return;
+  if(!await confirmSheet(`${out.length} kiracı aktarılsın mı?`,`${bad?bad+" satırda giriş tarihi veya kira eksik; onları sonra düzenleyebilirsin. ":""}Aynı isimde kayıt varsa atlanır.`,"Aktar",false))return;
   let n=0;
   for(const o of out){
     if(S.kiracilar.some(k=>norm(k.ad)===norm(o.ad)))continue;
-    let mid="";if(o.mulk){let m=S.mulkler.find(x=>norm(x.ad)===norm(o.mulk));if(!m){m={id:uid(),ad:o.mulk,tur:"Konut"};S.mulkler.push(m)}mid=m.id}
-    S.kiracilar.push({id:uid(),ad:o.ad,tel:o.tel,mulkId:mid,giris:o.giris||todayISO(),sure:o.sure,kira:o.kira,odemeGunu:o.gun,depozito:o.dep||"",takipBas:curYM(),not:o.not,cikis:o.cikis,gecmis:[]});n++;
+    const tn=norm(o.tur),tur=/isyeri|dukkan|ofis|is/.test(tn)?"İş yeri":/arsa|tarla/.test(tn)?"Arsa":"Konut";
+    S.kiracilar.push({id:uid(),ad:o.ad,tel:o.tel,adres:o.mulk,tur,giris:o.giris||todayISO(),sure:o.sure,kira:o.kira,odemeGunu:o.gun,depozito:o.dep||"",takipBas:curYM(),not:o.not,cikis:o.cikis,gecmis:[]});n++;
   }
   save();closeAllSheets();render();toast(n+" kiracı aktarıldı");
 }
@@ -1653,7 +1538,7 @@ function pinPad(title,onDone,cancelable){
   return api;
 }
 let locked=false;
-function lockIfNeeded(){
+function lockIfNeeded(){return;
   if(!S.ayar.pinHash||locked)return;
   locked=true;
   pinPad("PIN gir",async(p,api)=>{if(await hashPin(p)===S.ayar.pinHash){api.close();locked=false}else api.reset("Yanlış PIN, tekrar dene")},false);
