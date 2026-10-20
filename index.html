@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.6";
+const VERSION="2.0.7";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -616,11 +616,14 @@ function anniversary(k){
 }
 /* zam takvimi: her yıl ya da (sözleşmede öyle kararlaştırıldıysa) sözleşme süresi dolunca */
 const zamAralik=k=>k.zamPer==="sozlesme"?Math.max(1,+k.sure||1):1;
+/* yıldönümü: 29 Şubat gibi o yıl olmayan günler ayın son gününe çekilir */
+const annDate=(y,m,d)=>new Date(y,m,Math.min(d,new Date(y,m+1,0).getDate()));
 function nextRaise(k){
   const g=sozBas(k);if(!g||!isActive(k))return null;
   const P=zamAralik(k),t=today();
-  const at=n=>new Date(g.getFullYear()+n*P,g.getMonth(),g.getDate());
-  const doneNear=a=>(k.gecmis||[]).some(h=>{const d=parseISO(h.tarih);return d&&daysBetween(a,d)>=-60&&d<=t});
+  const at=n=>annDate(g.getFullYear()+n*P,g.getMonth(),g.getDate());
+  /* o yıldönümüne ait zam: yıldönümünden 60 gün önce ile 120 gün sonra arasında kaydedilmiş bir zam (ileri tarihli olabilir) */
+  const doneNear=a=>(k.gecmis||[]).some(h=>{if(h.tur==="gecmis"&&parseISO(h.tarih)>t)return false;const d=parseISO(h.tarih);if(!d)return false;const x=daysBetween(a,d);return x>=-60&&x<=120});
   let n=1;while(at(n)<=t&&n<200)n++;
   const past=n>1?at(n-1):null;
   let a;
@@ -635,8 +638,8 @@ function raiseInfo(k){
 function contractInfo(k){
   const g=sozBas(k),ilk=parseISO(k.sureBas)||parseISO(k.giris)||g;if(!g||!isActive(k))return null;
   const sure=Math.max(1,+k.sure||1);
-  const ilkBitis=new Date(g.getFullYear()+sure,g.getMonth(),g.getDate());
-  let bitis=ilkBitis;while(bitis<today())bitis=new Date(bitis.getFullYear()+1,bitis.getMonth(),bitis.getDate());
+  const ilkBitis=annDate(g.getFullYear()+sure,g.getMonth(),g.getDate());
+  let bitis=ilkBitis,yy=g.getFullYear()+sure;while(bitis<today()&&yy<g.getFullYear()+500){yy++;bitis=annDate(yy,g.getMonth(),g.getDate())}
   const yil=(today()-ilk)/(365.25*864e5);
   const giris=parseISO(k.giris)||g,toplam=(today()-giris)/(365.25*864e5);
   return{bitis,gun:daysBetween(today(),bitis),yil,toplam,uzama:bitis>ilkBitis,on:yil>=10,bes:yil>=5};
@@ -1186,7 +1189,7 @@ function openPastRaise(id){
   const h=(k.gecmis||[]).slice().sort((a,b)=>a.tarih.localeCompare(b.tarih));
   const g=sozBas(k)||parseISO(k.giris);
   const lastY=h.length?+h[h.length-1].tarih.slice(0,4):(g?g.getFullYear():NOW.getFullYear()-1);
-  const tarih=g?toISO(new Date(Math.min(lastY+1,NOW.getFullYear()),g.getMonth(),g.getDate())):todayISO();
+  const tarih=g?toISO(annDate(Math.min(lastY+1,NOW.getFullYear()),g.getMonth(),g.getDate())):todayISO();
   const eski=h.length?+h[h.length-1].yeni:(+k.ilkKira||"");
   sheet(`<h3>Geçmiş zam ekle</h3><p class="sub">${esc(k.ad)} · ilk giriş ${esc(fmtDate(k.giris))}</p>
   <div class="fld"><label for="pzT">Zam tarihi</label><input id="pzT" type="date" value="${tarih}" max="${todayISO()}"></div>
@@ -1208,7 +1211,7 @@ function openPastRaise(id){
       if(k.gecmis[k.gecmis.length-1].tarih===t)k.kira=y;
       save();render();
       toast(`${t.slice(0,4)} zammı eklendi`);
-      const d=parseISO(t);const nt=toISO(new Date(d.getFullYear()+1,d.getMonth(),d.getDate()));
+      const d=parseISO(t),g0=sozBas(k)||d;const nt=toISO(annDate(d.getFullYear()+1,d.getMonth(),g0.getMonth()===d.getMonth()?g0.getDate():d.getDate()));
       if(nt<=todayISO()){q("#pzT").value=nt;q("#pzE").value=fmtInput(y);q("#pzY").value="";q("#pzErr").textContent="";info();q("#pzY").focus()}
       else{close();refreshDetail(k.id)}
     };
