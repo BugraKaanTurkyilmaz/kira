@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.8";
+const VERSION="2.0.9";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -334,21 +334,27 @@ const FIREBASE_CONFIG={
   messagingSenderId:"537794896090",
   appId:"1:537794896090:web:5d20507d1af3974aa745e3"
 };
+/* Firestore alanları alfabetik sırayla döndürür: karşılaştırmalar sıradan bağımsız olmalı, yoksa sonsuz eşitleme döngüsü olur */
+const stable=o=>JSON.stringify(o,(k,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.keys(v).sort().reduce((a,x)=>(a[x]=v[x],a),{}):v);
 const COLS=["mulkler","kiracilar","odemeler","giderler"];
 const SYNC_AYAR=["ad","tel","iban","tufe","tema"];
 const CLOUD={on:false,api:null,user:null,ready:false,last:{},pending:false,err:"",unsubs:[],needVerify:false,denied:false};
 function cloudMap(){
   const m={};
-  for(const c of COLS)for(const r of S[c])if(r&&r.id)m[c+"/"+r.id]=JSON.stringify(r);
-  const a={};for(const k of SYNC_AYAR)a[k]=S.ayar[k]??null;m["meta/ayar"]=JSON.stringify(a);
+  for(const c of COLS)for(const r of S[c])if(r&&r.id)m[c+"/"+r.id]=stable(r);
+  const a={};for(const k of SYNC_AYAR)a[k]=S.ayar[k]??null;m["meta/ayar"]=stable(a);
   return m;
 }
+let pushLog=[];
 function cloudPush(){
   if(!CLOUD.user||!CLOUD.ready)return;
+  const nowT=Date.now();pushLog=pushLog.filter(t=>nowT-t<10000);
+  if(pushLog.length>=30){if(!CLOUD.halt){CLOUD.halt=true;CLOUD.err="Eşitleme geçici olarak durduruldu";cloudBadge();setTimeout(()=>{CLOUD.halt=false;CLOUD.err="";pushLog=[];cloudBadge();cloudPush()},60000)}return}
   const now=cloudMap(),prev=CLOUD.last,ops=[];
   for(const k in now)if(prev[k]!==now[k])ops.push({set:k,data:JSON.parse(now[k])});
   for(const k in prev)if(!(k in now))ops.push({del:k});
   if(!ops.length)return;
+  pushLog.push(nowT);
   CLOUD.last=now;CLOUD.pending=true;cloudBadge();
   CLOUD.api.write(CLOUD.user.uid,ops).then(()=>{CLOUD.err="";CLOUD.pending=false;CLOUD.syncAt=Date.now();cloudBadge();if(tab==="yedek")renderSoft()}).catch(e=>{CLOUD.err=cloudErr(e);cloudBadge();toast("Buluta yazılamadı: "+CLOUD.err)});
 }
@@ -357,12 +363,12 @@ function applyRemote(col,docs){
     const a=docs.find(d=>d.id==="ayar");
     if(a){for(const k of SYNC_AYAR)if(k in a)S.ayar[k]=a[k];applyTheme()}
     const rest={};for(const k in CLOUD.last)if(k!=="meta/ayar")rest[k]=CLOUD.last[k];
-    if(a){const o={};for(const k of SYNC_AYAR)o[k]=a[k]??null;rest["meta/ayar"]=JSON.stringify(o)}
+    if(a){const o={};for(const k of SYNC_AYAR)o[k]=a[k]??null;rest["meta/ayar"]=stable(o)}
     CLOUD.last=rest;
   }else{
     S[col]=docs.map(({id,...d})=>({...d,id}));
     const rest={};for(const k in CLOUD.last)if(!k.startsWith(col+"/"))rest[k]=CLOUD.last[k];
-    for(const r of S[col])rest[col+"/"+r.id]=JSON.stringify(r);
+    for(const r of S[col])rest[col+"/"+r.id]=stable(r);
     CLOUD.last=rest;
   }
   saveLocal();
@@ -391,8 +397,8 @@ async function cloudOnUser(u){
       const rAyar=remote.meta.find(d=>d.id==="ayar");
       /* CLOUD.last = buluttaki durum; böylece sadece eksikler gönderilir */
       CLOUD.last={};
-      for(const c of COLS)for(const r of remote[c])CLOUD.last[c+"/"+r.id]=JSON.stringify(r);
-      if(rAyar){const o={};for(const k of SYNC_AYAR)o[k]=rAyar[k]??null;CLOUD.last["meta/ayar"]=JSON.stringify(o)}
+      for(const c of COLS)for(const r of remote[c])CLOUD.last[c+"/"+r.id]=stable(r);
+      if(rAyar){const o={};for(const k of SYNC_AYAR)o[k]=rAyar[k]??null;CLOUD.last["meta/ayar"]=stable(o)}
       if(sameOwner){
         /* ilk giriş ya da aynı hesap: telefondakiyle buluttakini birleştir, hiçbir kayıt kaybolmaz */
         for(const c of COLS)S[c]=mergeById(S[c],remote[c].map(({id,...d})=>({...d,id})));
@@ -547,7 +553,7 @@ function cleanState(){
   for(const c of ["mulkler","odemeler","giderler"])if(!Array.isArray(S[c])){S[c]=[];ch=true}
   S.kiracilar=S.kiracilar.filter(k=>k&&typeof k==="object");
   for(const k of S.kiracilar){
-    const before=JSON.stringify(k);
+    const before=stable(k);
     if(!SAFE_ID.test(String(k.id))||seen.has(k.id))k.id=uid();seen.add(k.id);
     for(const f of ["ad","adres","tel","not","tur","zamPer"])if(k[f]!=null)k[f]=str(k[f],f==="not"?2000:200);
     k.kira=num(k.kira);k.sure=Math.min(50,Math.max(1,Math.round(num(k.sure))||1));
@@ -556,7 +562,7 @@ function cleanState(){
     k.gecmis=(Array.isArray(k.gecmis)?k.gecmis:[]).filter(h=>h&&isoOr(h.tarih)).map(h=>({tarih:h.tarih,eski:num(h.eski),yeni:num(h.yeni),oran:num(h.oran),...(["sozlesme","gecmis"].includes(h.tur)?{tur:h.tur}:{})}));
     if(k.sozlesmeler!=null)k.sozlesmeler=(Array.isArray(k.sozlesmeler)?k.sozlesmeler:[]).filter(z=>z&&isoOr(z.tarih)).map(z=>({tarih:z.tarih,sure:Math.min(50,Math.max(1,Math.round(num(z.sure))||1)),kira:z.kira==null?null:num(z.kira),not:str(z.not,200)}));
     if(k.ilkKira!=null&&k.ilkKira!=="")k.ilkKira=num(k.ilkKira);
-    if(JSON.stringify(k)!==before)ch=true;
+    if(stable(k)!==before)ch=true;
   }
   S.ayar=S.ayar&&typeof S.ayar==="object"?S.ayar:{};
   for(const f of ["ad","tel","iban","tema"])if(S.ayar[f]!=null&&typeof S.ayar[f]!=="string"){S.ayar[f]=str(S.ayar[f],100);ch=true}
