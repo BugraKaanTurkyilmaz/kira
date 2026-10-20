@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.3";
+const VERSION="2.0.4";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -1433,7 +1433,7 @@ function openSettings(){
     q("#sImp").onclick=()=>q("#fImp").click();
     q("#fImp").onchange=e=>{const f=e.target.files[0];if(f)importExcel(f,close);e.target.value=""};
     q("#sTpl").onclick=downloadTemplate;
-    q("#sExp").onclick=exportExcel;
+    q("#sExp").onclick=openExport;
     q("#sInst")&&(q("#sInst").onclick=async()=>{deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;close()});
     q("#sWipe").onclick=async()=>{
       if(!await confirmSheet("Tüm veriler silinsin mi?",CLOUD.user?"Tüm kiracılar ve ayarlar bu telefondan VE buluttan kalıcı olarak silinir. Önce yedek almanı öneririm.":"Tüm kiracılar ve ayarlar bu telefondan kalıcı olarak silinir. Önce yedek almanı öneririm.","Hepsini sil",true))return;
@@ -1490,12 +1490,24 @@ async function saveXlsx(name,sheets){
     await shareOrDownload(new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),name);
   }catch(e){toast("Excel hazırlanamadı. İnternet bağlantısını kontrol et.")}
 }
-function exportExcel(){
+function exportExcel(opts){
   const k=[["Ad Soyad","Telefon","Adres / Daire","Tür","Giriş Tarihi","Son Sözleşme","Sözleşme (yıl)","Zam","Aylık Kira","Sonraki Zam","Durum","Çıkış","Not"]];
   S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>{const r=nextRaise(x);k.push([x.ad,x.tel||"",kAdres(x),kTur(x),trDate(x.giris),trDate(x.sozBas||x.giris),+x.sure||1,x.zamPer==="sozlesme"?"Sözleşme bitince":"Her yıl",+x.kira||0,r?trDate(toISO(r.tarih)):"",isActive(x)?"Aktif":"Çıktı",trDate(x.cikis),x.not||""])});
-  const z=[["Kiracı","Tarih","Önceki Kira","Yeni Kira","Oran %"]];
-  S.kiracilar.forEach(x=>(x.gecmis||[]).forEach(h=>z.push([x.ad,trDate(h.tarih),+h.eski,+h.yeni,+h.oran])));
-  saveXlsx(`kiracilar-${todayISO()}.xlsx`,[["Kiracılar",k],["Zam Geçmişi",z]]);
+  const sheets=[["Kiracılar",k]];
+  if(opts&&opts.zam){
+    const z=[["Kiracı","Adres / Daire","Zam Tarihi","Önceki Kira","Yeni Kira","Artış %","Not"]];
+    S.kiracilar.slice().sort((a,b)=>a.ad.localeCompare(b.ad,"tr")).forEach(x=>(x.gecmis||[]).slice().sort((a,b)=>a.tarih.localeCompare(b.tarih)).forEach(h=>z.push([x.ad,kAdres(x),trDate(h.tarih),+h.eski,+h.yeni,+h.oran,h.tur==="sozlesme"?"Yeni sözleşme":h.tur==="gecmis"?"Geçmiş kayıt":""])));
+    sheets.push(["Zam Geçmişi",z]);
+  }
+  saveXlsx(`kiracilar-${todayISO()}.xlsx`,sheets);
+}
+function openExport(){
+  const n=S.kiracilar.reduce((t,x)=>t+(x.gecmis||[]).length,0);
+  sheet(`<h3>Excel'e indir</h3><p class="sub">${S.kiracilar.length} kiracı</p>
+  <label class="banner info" style="cursor:pointer"><input type="checkbox" id="xZ" ${n?"":"disabled"} style="width:20px;height:20px;accent-color:var(--brand);flex-shrink:0"><span><b>Zam geçmişini de ekle</b><br><small style="color:var(--muted)">${n?`${n} zam kaydı ayrı bir sayfada listelenir`:"Henüz zam kaydı yok"}</small></span></label>
+  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="xOk">İndir</button></div>`,(q,close)=>{
+    q("#xOk").onclick=()=>{const z=q("#xZ").checked;close();exportExcel({zam:z})};
+  });
 }
 function downloadTemplate(){saveXlsx("kiraci-sablonu.xlsx",[["Kiracılar",[["Ad Soyad","Adres / Daire","Tür","Giriş Tarihi","Aylık Kira","Telefon","Not"],["Örnek Kişi","A Blok D:3","Konut","15.03.2023",15000,"0555 000 00 00","Bu satırı silip kendi kiracılarını yaz"]]]])}
 const norm=s=>String(s??"").toLocaleLowerCase("tr").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/ı/g,"i").replace(/[^a-z0-9]/g,"");
