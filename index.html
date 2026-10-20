@@ -945,7 +945,7 @@ function openDetail(id){
     <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
     ${k.sozBas&&k.sozBas!==k.giris?`<dt>Son sözleşme</dt><dd>${esc(fmtDate(k.sozBas))}</dd>`:""}
     <dt>Sözleşme</dt><dd>${+k.sure||1} yıl · zam ${k.zamPer==="sozlesme"?"sözleşme bitince":"her yıl"}</dd>
-    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))}${c.uzama?" (kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.toplam*10)/10)} yıl <small style="color:var(--muted)">(${esc(k.giris.slice(0,4))}'den beri)</small></dd>${k.sureBas&&k.sureBas!==k.giris?`<dt>5/10 yıl sayımı</dt><dd>${esc(fmtShortDate(k.sureBas))}'den · ${PCT.format(Math.floor(c.yil*10)/10)} yıl</dd>`:c.on?`<dt>5/10 yıl</dt><dd>10 yıl doldu</dd>`:c.bes?`<dt>5/10 yıl</dt><dd>5 yıl doldu</dd>`:""}`:""}
+    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))}${c.uzama?" (kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.toplam*10)/10)} yıl <small style="color:var(--muted)">(giriş ${esc(k.giris.slice(0,4))})</small></dd>${k.sureBas&&k.sureBas!==k.giris?`<dt>5/10 yıl sayımı</dt><dd>${esc(fmtShortDate(k.sureBas))} itibarıyla · ${PCT.format(Math.floor(c.yil*10)/10)} yıl</dd>`:c.on?`<dt>5/10 yıl</dt><dd>10 yıl doldu</dd>`:c.bes?`<dt>5/10 yıl</dt><dd>5 yıl doldu</dd>`:""}`:""}
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
     ${k.not?`<dt>Not</dt><dd style="text-align:left;grid-column:1/-1;white-space:pre-wrap">${esc(k.not)}</dd>`:""}
   </dl></div>
