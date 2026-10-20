@@ -169,7 +169,7 @@ button.card{font:inherit;color:inherit}
 .calc b{font-size:24px;font-variant-numeric:tabular-nums}
 .quick{display:flex;gap:6px;flex-wrap:wrap}
 .quick button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:6px 11px;font-weight:600;font-size:13.5px}
-.quick button.hl{border-color:var(--brand);color:var(--brand)}
+.quick button.hl{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 .grid12{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
 .grid12 button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 2px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;line-height:1.2}
 .grid12 button small{font-size:10.5px;font-weight:500;color:var(--muted)}
@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.1";
+const VERSION="2.0.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -1069,38 +1069,72 @@ function openReceipt(oid){
 }
 
 /* ---------- zam ---------- */
+/* ---------- zam: tek ekranda hesapla, kaydet, bildir ---------- */
+function lastRealRaise(k){
+  const h=(k.gecmis||[]).filter(x=>x.tur!=="gecmis").slice().sort((a,b)=>b.tarih.localeCompare(a.tarih))[0];
+  return h&&daysBetween(parseISO(h.tarih),today())<=60?h:null;
+}
+function zamMetni(k,eski,yeni,oran,tarih,L){
+  const first=String(k.ad).split(" ")[0];
+  const iban=S.ayar.iban?`\nIBAN: ${S.ayar.iban}${S.ayar.ad?" ("+S.ayar.ad+")":""}`:"";
+  const sig=S.ayar.ad?`\n${S.ayar.ad}`:"";
+  const tufe=Math.abs(oran-L.tufe)<0.005;
+  const o=tufe?`yasal sınır olan 12 aylık TÜFE ortalaması (%${PCT.format(L.tufe)}) oranında`:`%${PCT.format(Math.round(oran*100)/100)}`;
+  return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${tarih?fmtDate(tarih):"yakında"} itibarıyla başlıyor. Aylık kira ${TL.format(eski)} tutarından ${o} artışla ${TL.format(yeni)} olacaktır.${iban}\nİyi günler.${sig}`;
+}
 function openRaise(id){
-  const k=kById(id);if(!k)return;const L=limitNow(),eski=+k.kira||0;
-  const g=sozBas(k);let tarih=todayISO();
-  if(g){const a=new Date(NOW.getFullYear(),g.getMonth(),g.getDate());if(daysBetween(today(),a)<=45&&daysBetween(today(),a)>=-300)tarih=toISO(a)}
-  sheet(`<h3>Kira artışı</h3><p class="sub">${esc(k.ad)} · şu anki kira ${TL.format(eski)}</p>
-  <div class="quick"><button class="hl" data-p="${L.tufe}">%${PCT.format(L.tufe)} TÜFE</button>${[10,20,25,30].map(p=>`<button data-p="${p}">%${p}</button>`).join("")}</div>
-  <div class="g2"><div class="fld"><label for="zO">Oran (%)</label><input id="zO" inputmode="decimal" value="${fmtInput(L.tufe)}"></div>
-  <div class="fld"><label for="zY">Yeni kira (₺)</label><input id="zY" class="tl" inputmode="decimal"></div></div>
-  <div class="calc"><span>Yeni aylık kira</span><b id="zR"></b></div>
-  <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih}"></div>
-  <p class="err" id="zW"></p>
-  <p class="hint">Konut ve iş yeri kiralarında artış, önceki kira yılının 12 aylık TÜFE ortalamasını geçemez. Şu anki sınır ${esc(ymLabel(L.tufeAy))} için %${PCT.format(L.tufe)}.</p>
-  <div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Uygula</button></div>
-  <button class="btn ghost" id="zMsg">${ic("wa")}Kirayı değiştirmeden sadece bildirim gönder</button>`,(q,close)=>{
-    q("#zMsg").onclick=()=>{close();openZamMesaj(k.id,"once")};
-    const konut=kTur(k)!=="Arsa";
-    const upd=(from)=>{
-      let o=parseMoney(q("#zO").value),y=parseMoney(q("#zY").value);
-      if(from==="o"){y=Math.floor(eski*(1+o/100));q("#zY").value=fmtInput(y)}
-      else{o=eski?Math.round((y/eski-1)*10000)/100:0;q("#zO").value=fmtInput(o)}
-      q("#zR").textContent=TL.format(y)+` (+${TL.format(Math.max(0,y-eski))})`;
-      q("#zW").textContent=konut&&o>L.tufe+0.005?`Bu artış (%${PCT.format(o)}) yasal sınırın (%${PCT.format(L.tufe)}) üstünde. Kiracı kabul etmezse geçersiz sayılabilir.`:"";
+  const k=kById(id);if(!k)return;const L=limitNow();
+  const saved=lastRealRaise(k);
+  const eski=saved?+saved.eski:+k.kira||0;
+  const r=nextRaise(k);
+  const tarih0=saved?saved.tarih:(r?toISO(r.tarih):todayISO());
+  const oran0=saved?+saved.oran:L.tufe;
+  const yeni0=saved?+saved.yeni:Math.floor(eski*(1+L.tufe/100));
+  const konut=kTur(k)!=="Arsa";
+  sheet(`<h3>${saved?"Zam bildirimi":"Zam yap"}</h3><p class="sub">${esc(k.ad)} · ${saved?"önceki kira":"şu anki kira"} ${TL.format(eski)}</p>
+  ${saved?`<div class="banner" style="background:var(--ok-soft)">${ic("check",2)}<span>Zam kaydedildi: <b>${TL.format(saved.eski)} → ${TL.format(saved.yeni)}</b> (%${PCT.format(saved.oran)}), ${esc(fmtDate(saved.tarih))}</span><button id="zEdit">Düzenle</button></div>`:`
+  <div class="quick" id="zQ"><button type="button" data-p="${L.tufe}">%${PCT.format(L.tufe)} TÜFE</button>${[5,10,15,20,25].map(p=>`<button type="button" data-p="${p}">%${p}</button>`).join("")}</div>
+  <div class="g2"><div class="fld"><label for="zO">Oran (%)</label><input id="zO" inputmode="decimal" value="${fmtInput(oran0)}"></div>
+  <div class="fld"><label for="zY">Yeni kira (₺)</label><input id="zY" class="tl" inputmode="decimal" value="${esc(fmtInput(yeni0))}"></div></div>
+  <p class="hint" style="margin-top:-6px">Oranı yaz ya da yeni kirayı yaz; diğeri kendiliğinden hesaplanır.</p>
+  <div class="fld"><label for="zT">Geçerlilik tarihi</label><input id="zT" type="date" value="${tarih0}"></div>
+  <p class="err" id="zW"></p>`}
+  <div class="fld"><label for="mT">Kiracıya gidecek mesaj</label><textarea id="mT" style="min-height:140px"></textarea></div>
+  <div class="btns grow"><a class="btn wa" id="mW" target="_blank" rel="noopener">${ic("wa")}WhatsApp</a><a class="btn" id="mS">SMS</a><button class="btn" id="mC">Kopyala</button></div>
+  ${saved?`<button class="btn" data-close>Kapat</button>`:`<div class="btns grow"><button class="btn" data-close>Vazgeç</button><button class="btn pri" id="zSave">Zammı kaydet</button></div>
+  <p class="hint">Mesajı gönderdikten sonra "Zammı kaydet"e basmayı unutma; yeni kira ve sonraki zam tarihi buna göre güncellenir.</p>`}`,(q,close,ov)=>{
+    let edited=false;
+    const vals=()=>saved?{o:+saved.oran,y:+saved.yeni,t:saved.tarih}:{o:parseMoney(q("#zO").value),y:parseMoney(q("#zY").value),t:q("#zT").value};
+    const upd=()=>{const v=q("#mT").value;q("#mW").href=waLink(k.tel,v);q("#mS").href=smsHref(k.tel,v)};
+    const refresh=()=>{
+      const {o,y,t}=vals();
+      if(!saved){
+        ov.querySelectorAll("#zQ [data-p]").forEach(b=>b.classList.toggle("hl",Math.abs(+b.dataset.p-o)<0.005));
+        q("#zW").textContent=konut&&o>L.tufe+0.005?`Bu artış (%${PCT.format(o)}) yasal sınırın (%${PCT.format(L.tufe)}) üstünde. Kiracı kabul etmezse geçersiz sayılabilir.`:"";
+      }
+      if(!edited)q("#mT").value=zamMetni(k,eski,y,o,t,L);
+      upd();
     };
-    upd("o");
-    q("#zO").oninput=()=>upd("o");q("#zY").oninput=()=>upd("y");
-    q(".quick").querySelectorAll("button").forEach(b=>b.onclick=()=>{q("#zO").value=fmtInput(+b.dataset.p);upd("o")});
-    q("#zSave").onclick=()=>{
-      const y=parseMoney(q("#zY").value),t=q("#zT").value;if(!(y>0)||!t)return;
-      k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0});
-      k.kira=y;save();close();render();refreshDetail(k.id);toast("Yeni kira "+TL.format(y));
-      openZamMesaj(k.id,"yapildi");
-    };
+    if(!saved){
+      q("#zO").addEventListener("input",()=>{const o=parseMoney(q("#zO").value);q("#zY").value=fmtInput(Math.floor(eski*(1+o/100)));edited=false;refresh()});
+      q("#zY").addEventListener("input",()=>{const y=parseMoney(q("#zY").value);const o=eski?Math.round((y/eski-1)*10000)/100:0;q("#zO").value=Math.abs(Math.floor(eski*(1+L.tufe/100))-y)<1?fmtInput(L.tufe):fmtInput(o);edited=false;refresh()});
+      q("#zT").addEventListener("input",()=>{edited=false;refresh()});
+      ov.querySelectorAll("#zQ [data-p]").forEach(b=>b.onclick=()=>{q("#zO").value=fmtInput(+b.dataset.p);q("#zO").dispatchEvent(new Event("input"))});
+      q("#zSave").onclick=()=>{
+        const {o,y,t}=vals();if(!(y>0)||!t){q("#zW").textContent="Yeni kira ve tarihi gir.";return}
+        k.gecmis=k.gecmis||[];k.gecmis.push({tarih:t,eski,yeni:y,oran:eski?Math.round((y/eski-1)*10000)/100:0});
+        k.kira=y;save();close();render();refreshDetail(k.id);toast("Zam kaydedildi · yeni kira "+TL.format(y));
+      };
+    }else{
+      q("#zEdit").onclick=()=>{
+        k.gecmis=(k.gecmis||[]).filter(x=>x!==saved);k.kira=+saved.eski;save();close();render();refreshDetail(k.id);
+        openRaise(k.id);
+        setTimeout(()=>{const zo=document.getElementById("zO"),zt=document.getElementById("zT");if(zo&&zt){zt.value=saved.tarih;zo.value=fmtInput(saved.oran);zo.dispatchEvent(new Event("input"))}},30);
+      };
+    }
+    q("#mT").addEventListener("input",()=>{edited=true;upd()});
+    q("#mC").onclick=async()=>{try{await navigator.clipboard.writeText(q("#mT").value);toast("Kopyalandı")}catch(e){q("#mT").select();toast("Seçili metni kopyala")}};
+    refresh();
   });
 }
 
@@ -1171,48 +1205,7 @@ function openSozlesme(id){
 }
 
 /* ---------- mesaj ---------- */
-/* ---------- zam bildirimi (ayrı ekran) ---------- */
-function openZamMesaj(id,mod){
-  const k=kById(id);if(!k)return;
-  const first=String(k.ad).split(" ")[0],L=limitNow();
-  const h=(k.gecmis||[]).slice().sort((a,b)=>b.tarih.localeCompare(a.tarih))[0];
-  const yeniVar=h&&daysBetween(parseISO(h.tarih),today())<=60;
-  const nr=nextRaise(k);
-  const iban=S.ayar.iban?`\nIBAN: ${S.ayar.iban}${S.ayar.ad?" ("+S.ayar.ad+")":""}`:"";
-  const sig=S.ayar.ad?`\n${S.ayar.ad}`:"";
-  let m=mod||(yeniVar?"yapildi":"once");
-  sheet(`<h3>Zam bildirimi</h3><p class="sub">${esc(k.ad)} · şu anki kira ${TL.format(k.kira||0)}</p>
-  <div class="seg"><button data-z="once">Önceden haber ver</button><button data-z="yapildi" ${h?"":"disabled"}>Zam yapıldı</button></div>
-  <div id="zOnce"><div class="g2"><div class="fld"><label for="zmT">Geçerlilik tarihi</label><input id="zmT" type="date" value="${nr?toISO(nr.tarih):todayISO()}"></div>
-  <div class="fld"><label for="zmO">Artış oranı (%)</label><input id="zmO" inputmode="decimal" value="${fmtInput(L.tufe)}"></div></div>
-  <div class="fld"><label for="zmY">Yeni aylık kira (₺)</label><input id="zmY" class="tl" inputmode="decimal" value="${esc(fmtInput(Math.floor((k.kira||0)*(1+L.tufe/100))))}"></div>
-  <div class="quick"><button type="button" class="hl" data-zo="${L.tufe}">%${PCT.format(L.tufe)} TÜFE</button>${[10,15,20,25].map(p=>`<button type="button" data-zo="${p}">%${p}</button>`).join("")}</div>
-  <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="zmL" checked style="width:18px;height:18px;accent-color:var(--brand)">Yasal sınırı (TÜFE %${PCT.format(L.tufe)}) mesajda belirt</label></div>
-  <div class="fld"><textarea id="mT" style="min-height:160px"></textarea></div>
-  <div class="btns grow"><button class="btn" id="mC">Kopyala</button><a class="btn wa" id="mW" target="_blank" rel="noopener">${ic("wa")}WhatsApp</a><a class="btn" id="mS">SMS</a></div>
-  <p class="hint">Mesaj sadece bilgilendirme içindir. Kirayı uygulamada değiştirmek için <b>Zam yap</b>'ı kullan.</p>`,(q,close,ov)=>{
-    const build=()=>{
-      if(m==="yapildi"&&h)return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${fmtDate(h.tarih)} itibarıyla başlıyor. %${PCT.format(h.oran)} artışla yeni aylık kira ${TL.format(h.yeni)} olacaktır.${iban}\nİyi günler.${sig}`;
-      const y=parseMoney(q("#zmY").value),t=q("#zmT").value,o=parseMoney(q("#zmO").value);
-      const tufeMi=Math.abs(o-L.tufe)<0.005,yasal=q("#zmL").checked;
-      const oranTxt=tufeMi&&yasal?`yasal sınır olan 12 aylık TÜFE ortalaması (%${PCT.format(L.tufe)}) oranında`:`%${PCT.format(Math.round(o*100)/100)}${yasal?` (yasal üst sınır %${PCT.format(L.tufe)})`:""}`;
-      return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${t?fmtDate(t):"yakında"} itibarıyla başlıyor. Aylık kira ${TL.format(+k.kira||0)} tutarından ${oranTxt} artışla ${TL.format(y)} olacaktır.${iban}\nİyi günler.${sig}`;
-    };
-    const upd=()=>{const v=q("#mT").value;q("#mW").href=waLink(k.tel,v);q("#mS").href=`sms:${telLink(k.tel)}${/iPhone|iPad/.test(navigator.userAgent)?"&":"?"}body=${encodeURIComponent(v)}`};
-    const set=()=>{ov.querySelectorAll("[data-z]").forEach(b=>b.classList.toggle("on",b.dataset.z===m));q("#zOnce").hidden=m!=="once";q("#mT").value=build();upd()};
-    ov.querySelectorAll("[data-z]").forEach(b=>b.onclick=()=>{if(b.disabled)return;m=b.dataset.z;set()});
-    const re=()=>{q("#mT").value=build();upd()};
-    const e0=+k.kira||0;
-    q("#zmO").addEventListener("input",()=>{const o=parseMoney(q("#zmO").value);q("#zmY").value=fmtInput(Math.floor(e0*(1+o/100)));re()});
-    q("#zmY").addEventListener("input",()=>{const y=parseMoney(q("#zmY").value);const o=e0?Math.round((y/e0-1)*10000)/100:0;q("#zmO").value=Math.abs(Math.floor(e0*(1+L.tufe/100))-y)<1?fmtInput(L.tufe):fmtInput(o);re()});
-    ov.querySelectorAll("[data-zo]").forEach(b=>b.onclick=()=>{q("#zmO").value=fmtInput(+b.dataset.zo);q("#zmO").dispatchEvent(new Event("input"))});
-    ["#zmT","#zmL"].forEach(x=>q(x).addEventListener(x==="#zmL"?"change":"input",re));
-    q("#mT").oninput=upd;
-    q("#mC").onclick=async()=>{try{await navigator.clipboard.writeText(q("#mT").value);toast("Kopyalandı")}catch(e){q("#mT").select();toast("Seçili metni kopyala")}};
-    if(!k.tel){q("#mW").removeAttribute("target")}
-    set();
-  });
-}
+function openZamMesaj(id){openRaise(id)}
 function msgTemplates(k,ym){
   ym=ym||curYM();
   const first=String(k.ad).split(" ")[0],b=balance(k),late=lateMonths(k),ps=periodState(k,ym);
