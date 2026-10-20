@@ -235,7 +235,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.2";
+const VERSION="2.0.3";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -628,7 +628,8 @@ function contractInfo(k){
   const ilkBitis=new Date(g.getFullYear()+sure,g.getMonth(),g.getDate());
   let bitis=ilkBitis;while(bitis<today())bitis=new Date(bitis.getFullYear()+1,bitis.getMonth(),bitis.getDate());
   const yil=(today()-ilk)/(365.25*864e5);
-  return{bitis,gun:daysBetween(today(),bitis),yil,uzama:bitis>ilkBitis,on:yil>=10,bes:yil>=5};
+  const giris=parseISO(k.giris)||g,toplam=(today()-giris)/(365.25*864e5);
+  return{bitis,gun:daysBetween(today(),bitis),yil,toplam,uzama:bitis>ilkBitis,on:yil>=10,bes:yil>=5};
 }
 function monthTotals(ym){
   let exp=0,col=0;
@@ -900,7 +901,7 @@ function openDetail(id){
     <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
     ${k.sozBas&&k.sozBas!==k.giris?`<dt>Son sözleşme</dt><dd>${esc(fmtDate(k.sozBas))}</dd>`:""}
     <dt>Sözleşme</dt><dd>${+k.sure||1} yıl · zam ${k.zamPer==="sozlesme"?"sözleşme bitince":"her yıl"}</dd>
-    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))}${c.uzama?" (kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.yil*10)/10)} yıl${c.on?" · 10 yıl doldu":c.bes?" · 5 yıl doldu":""}</dd>`:""}
+    ${c?`<dt>Sözleşme bitişi</dt><dd>${esc(fmtDate(toISO(c.bitis)))}${c.uzama?" (kendiliğinden uzadı)":""}</dd><dt>Kiracılık süresi</dt><dd>${PCT.format(Math.floor(c.toplam*10)/10)} yıl <small style="color:var(--muted)">(${esc(k.giris.slice(0,4))}'den beri)</small></dd>${k.sureBas&&k.sureBas!==k.giris?`<dt>5/10 yıl sayımı</dt><dd>${esc(fmtShortDate(k.sureBas))}'den · ${PCT.format(Math.floor(c.yil*10)/10)} yıl</dd>`:c.on?`<dt>5/10 yıl</dt><dd>10 yıl doldu</dd>`:c.bes?`<dt>5/10 yıl</dt><dd>5 yıl doldu</dd>`:""}`:""}
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
     ${k.not?`<dt>Not</dt><dd style="text-align:left;grid-column:1/-1;white-space:pre-wrap">${esc(k.not)}</dd>`:""}
   </dl></div>

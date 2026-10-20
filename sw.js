@@ -1,5 +1,5 @@
 /* Kira Defteri: uygulamayı internetsiz açılabilir yapar. tufe.json her zaman önce internetten denenir. */
-const CACHE = "kira-defteri-v2.0.2";
+const CACHE = "kira-defteri-v2.0.3";
 const CORE = ["./", "index.html", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "tufe.json"];
 /* version.json hiç önbelleğe alınmaz: güncelleme kontrolü her zaman sunucuya sorar */
 
