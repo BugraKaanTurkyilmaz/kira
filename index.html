@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.7";
+const VERSION="2.0.8";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -404,6 +404,7 @@ async function cloudOnUser(u){
         for(const c of COLS)S[c]=remote[c].map(({id,...d})=>({...d,id}));
         if(rAyar)for(const k of SYNC_AYAR)if(k in rAyar)S.ayar[k]=rAyar[k];
       }
+      cleanState();
       S.cloudUid=u.uid;CLOUD.ready=true;saveLocal();applyTheme();
       cloudPush();
       if(!hasRemote&&COLS.some(c=>S[c].length))toast("Veriler buluta yedeklendi");
@@ -535,8 +536,34 @@ const TURLER=["Konut","İş yeri","Arsa"];
 const kTur=k=>TURLER.includes(k.tur)?k.tur:"Konut";
 const kAdres=k=>k.adres||"";
 /* eski sürümlerden: ayrı mülk kaydı varsa adresi ve türü kiracıya taşı */
+/* güvenlik: dışarıdan gelen (yedek dosyası, bulut, eski sürüm) verileri beklenen biçime zorla */
+const SAFE_ID=/^[A-Za-z0-9_-]{1,64}$/;
+const isoOr=v=>typeof v==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&parseISO(v)?v:"";
+const num=v=>{const n=+v;return Number.isFinite(n)?n:0};
+const str=(v,max=500)=>v==null?"":String(v).slice(0,max);
+function cleanState(){
+  let ch=false;const seen=new Set();
+  if(!Array.isArray(S.kiracilar)){S.kiracilar=[];ch=true}
+  for(const c of ["mulkler","odemeler","giderler"])if(!Array.isArray(S[c])){S[c]=[];ch=true}
+  S.kiracilar=S.kiracilar.filter(k=>k&&typeof k==="object");
+  for(const k of S.kiracilar){
+    const before=JSON.stringify(k);
+    if(!SAFE_ID.test(String(k.id))||seen.has(k.id))k.id=uid();seen.add(k.id);
+    for(const f of ["ad","adres","tel","not","tur","zamPer"])if(k[f]!=null)k[f]=str(k[f],f==="not"?2000:200);
+    k.kira=num(k.kira);k.sure=Math.min(50,Math.max(1,Math.round(num(k.sure))||1));
+    for(const f of ["giris","sozBas","sureBas","cikis"])if(k[f]!=null&&k[f]!=="")k[f]=isoOr(k[f]);
+    if(!isoOr(k.giris))k.giris=todayISO();
+    k.gecmis=(Array.isArray(k.gecmis)?k.gecmis:[]).filter(h=>h&&isoOr(h.tarih)).map(h=>({tarih:h.tarih,eski:num(h.eski),yeni:num(h.yeni),oran:num(h.oran),...(["sozlesme","gecmis"].includes(h.tur)?{tur:h.tur}:{})}));
+    if(k.sozlesmeler!=null)k.sozlesmeler=(Array.isArray(k.sozlesmeler)?k.sozlesmeler:[]).filter(z=>z&&isoOr(z.tarih)).map(z=>({tarih:z.tarih,sure:Math.min(50,Math.max(1,Math.round(num(z.sure))||1)),kira:z.kira==null?null:num(z.kira),not:str(z.not,200)}));
+    if(k.ilkKira!=null&&k.ilkKira!=="")k.ilkKira=num(k.ilkKira);
+    if(JSON.stringify(k)!==before)ch=true;
+  }
+  S.ayar=S.ayar&&typeof S.ayar==="object"?S.ayar:{};
+  for(const f of ["ad","tel","iban","tema"])if(S.ayar[f]!=null&&typeof S.ayar[f]!=="string"){S.ayar[f]=str(S.ayar[f],100);ch=true}
+  return ch;
+}
 function migrate(){
-  let ch=false;
+  let ch=cleanState();
   for(const k of S.kiracilar){
     if(k.adres==null||!k.tur){
       const m=S.mulkler.find(x=>x.id===k.mulkId);
@@ -551,7 +578,7 @@ function migrate(){
 /* ================== TÜFE ================== */
 function limitNow(){
   const c=[{...DEF_TUFE,src:"def"}];
-  const o=S.tufeOto;if(o&&+o.tufe>0&&/^\d{4}-\d{2}$/.test(o.tufeAy||""))c.push({tufe:+o.tufe,tufeAy:o.tufeAy,kaynak:o.kaynak||"",src:"oto"});
+  const o=S.tufeOto;if(o&&+o.tufe>0&&+o.tufe<200&&/^\d{4}-\d{2}$/.test(o.tufeAy||""))c.push({tufe:+o.tufe,tufeAy:o.tufeAy,kaynak:o.kaynak||"",src:"oto"});
   const a=S.ayar.tufe;if(a&&+a.tufe>0)c.push({tufe:+a.tufe,tufeAy:a.tufeAy,kaynak:"Elle girildi",src:"el"});
   return c.reduce((x,y)=>y.tufeAy>=x.tufeAy?y:x);
 }
@@ -560,7 +587,7 @@ async function fetchTufe(){
     const r=await fetch("tufe.json?t="+Date.now(),{cache:"no-store"});
     if(!r.ok)return;
     const d=await r.json();
-    if(d&&+d.tufe>0&&/^\d{4}-\d{2}$/.test(d.tufeAy||"")){
+    if(d&&+d.tufe>0&&+d.tufe<200&&/^\d{4}-\d{2}$/.test(d.tufeAy||"")){
       const prev=S.tufeOto;
       S.tufeOto={tufe:+d.tufe,tufeAy:d.tufeAy,kaynak:String(d.kaynak||""),guncelleme:String(d.guncelleme||"")};
       save();
@@ -952,7 +979,7 @@ function openDetail(id){
   ${c&&(c.bes||c.on)?`<div class="banner warn" style="flex-wrap:wrap">${ic("doc")}<span>${c.on?"Kiracı 10 yılı doldurdu. Yeni kira yılının bitiminden en az 3 ay önce bildirimde bulunarak sözleşmeyi sona erdirme hakkın doğar.":"Kiracı 5 yılı doldurdu. Anlaşamazsanız kira tespit davası açılabilir."} Hukuki adımdan önce bir avukata danışmanı öneririm.</span>${k.sozBas&&k.sozBas!==k.giris&&k.sureBas!==k.sozBas?`<button id="dReset">Son sözleşmeden say</button>`:""}</div>`:""}
   <div class="sec"><div class="sechd"><h2>Kira geçmişi</h2><button id="dPast">+ Geçmiş zam</button></div>
   ${hist.length?`<div class="card list" id="dHist">${hist.slice(0,3).map(histRow).join("")}</div>${hist.length>3?`<button class="btn ghost" id="dHistAll">Tümünü göster (${hist.length})</button>`:""}`:`<div class="card empty" style="padding:14px;text-align:left">Henüz zam kaydı yok. Eski zamları eklemek istersen "+ Geçmiş zam"a dokun.</div>`}</div>
-  ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${z.sure} yıl</b><small>${z.kira?TL.format(z.kira)+"/ay":"kira girilmemiş"}${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
+  ${(k.sozlesmeler||[]).length?`<div class="sec"><div class="sechd"><h2>Sözleşmeler</h2></div><div class="card list">${k.sozlesmeler.slice().sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(z=>`<div class="item"><span class="av">${ic("doc")}</span><span class="main"><b>${esc(fmtDate(z.tarih))} · ${+z.sure||1} yıl</b><small>${z.kira?TL.format(z.kira)+"/ay":"kira girilmemiş"}${z.not?" · "+esc(z.not):""}</small></span></div>`).join("")}</div></div>`:""}
   <div class="btns grow"><button class="btn" id="dEdit">Düzenle</button>${isActive(k)?`<button class="btn" id="dSoz">Yeni sözleşme</button>`:""}</div>
   <div class="btns grow">${isActive(k)?`<button class="btn" id="dOut">Çıkış kaydı</button>`:`<button class="btn" id="dBack">Çıkışı geri al</button>`}<button class="btn danger" id="dDel">Sil</button></div>`,(q,close)=>{
     q("#dRaise")&&(q("#dRaise").onclick=()=>openRaise(k.id));
@@ -1490,6 +1517,7 @@ async function backup(){
   if(ok){S.ayar.sonYedek=todayISO();save();render();toast("Yedek hazır")}
 }
 function restore(file,closeSettings){
+  if(file.size>10*1024*1024){toast("Dosya çok büyük; bu bir Kira Defteri yedeği değil");return}
   const r=new FileReader();
   r.onload=async()=>{
     try{
@@ -1501,6 +1529,7 @@ function restore(file,closeSettings){
       S={...blank(),...d,ayar:{...blank().ayar,...(d.ayar||{})}};
       delete S._app;delete S._surum;delete S._tarih;
       if(!S.ayar.pinHash)S.ayar.pinHash=keepPin;
+      cleanState();
       S.cloudUid=CLOUD.user?CLOUD.user.uid:(d.cloudUid||"");
       save();applyTheme();closeAllSheets();render();toast("Yedek yüklendi");
     }catch(e){toast("Bu dosya geçerli bir yedek değil")}
@@ -1545,6 +1574,7 @@ function openExport(){
 function downloadTemplate(){saveXlsx("kiraci-sablonu.xlsx",[["Kiracılar",[["Ad Soyad","Adres / Daire","Tür","Giriş Tarihi","Aylık Kira","Telefon","Not"],["Örnek Kişi","A Blok D:3","Konut","15.03.2023",15000,"0555 000 00 00","Bu satırı silip kendi kiracılarını yaz"]]]])}
 const norm=s=>String(s??"").toLocaleLowerCase("tr").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/ı/g,"i").replace(/[^a-z0-9]/g,"");
 async function importExcel(file,closeSettings){
+  if(file.size>10*1024*1024){toast("Excel dosyası çok büyük (en fazla 10 MB)");return}
   let X;try{X=await loadXLSX()}catch(e){toast("Excel okuyucu yüklenemedi. İnternet gerekli.");return}
   const buf=await file.arrayBuffer();
   let rows;try{const wb=X.read(buf,{type:"array",cellDates:true});rows=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:""})}catch(e){toast("Dosya okunamadı");return}
