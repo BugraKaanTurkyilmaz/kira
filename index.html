@@ -52,6 +52,13 @@ button{cursor:pointer;touch-action:manipulation}
 .hdr small{display:block;font-size:13px;color:var(--muted);font-weight:400;letter-spacing:0}
 .iconbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;flex-shrink:0}
 .iconbtn svg{width:20px;height:20px}
+.cloudpill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:13px;flex-shrink:0;color:var(--muted)}
+.cloudpill svg{width:18px;height:18px}
+.cloudpill[data-st="ok"]{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.cloudpill[data-st="wait"]{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+.cloudpill[data-st="err"]{background:var(--bad-soft);border-color:transparent;color:var(--bad)}
+.cloudpill[data-st="off"]{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+@media (prefers-reduced-motion:no-preference){.cloudpill[data-st="wait"] svg{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.35}}}
 .iconbtn.cloud{position:relative}
 .iconbtn.cloud i{position:absolute;right:6px;bottom:6px;width:10px;height:10px;border-radius:99px;border:2px solid var(--surface);background:var(--faint)}
 .iconbtn.cloud[data-st="ok"]{color:var(--ok)} .iconbtn.cloud[data-st="ok"] i{background:var(--ok)}
@@ -223,7 +230,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <body>
 <header class="hdr">
   <h1 id="title">Özet<small id="subtitle"></small></h1>
-  <button class="iconbtn cloud" id="cloudBtn" hidden aria-label="Bulut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.6 1.5A3.75 3.75 0 0 1 17.5 18z"/></svg><i></i></button>
+  <button class="cloudpill" id="cloudBtn" hidden aria-label="Bulut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.6 1.5A3.75 3.75 0 0 1 17.5 18z"/></svg><span id="cloudTxt">Bulut</span></button>
   <button class="iconbtn" id="btnSettings" aria-label="Ayarlar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </header>
 <main id="view"></main>
@@ -235,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.5";
+const VERSION="2.0.6";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -343,7 +350,7 @@ function cloudPush(){
   for(const k in prev)if(!(k in now))ops.push({del:k});
   if(!ops.length)return;
   CLOUD.last=now;CLOUD.pending=true;cloudBadge();
-  CLOUD.api.write(CLOUD.user.uid,ops).then(()=>{CLOUD.err="";cloudBadge()}).catch(e=>{CLOUD.err=cloudErr(e);cloudBadge();toast("Buluta yazılamadı: "+CLOUD.err)});
+  CLOUD.api.write(CLOUD.user.uid,ops).then(()=>{CLOUD.err="";CLOUD.pending=false;CLOUD.syncAt=Date.now();cloudBadge();if(tab==="yedek")renderSoft()}).catch(e=>{CLOUD.err=cloudErr(e);cloudBadge();toast("Buluta yazılamadı: "+CLOUD.err)});
 }
 function applyRemote(col,docs){
   if(col==="meta"){
@@ -401,7 +408,7 @@ async function cloudOnUser(u){
       cloudPush();
       if(!hasRemote&&COLS.some(c=>S[c].length))toast("Veriler buluta yedeklendi");
       CLOUD.unsubs=CLOUD.api.listen(u.uid,(col,docs,meta)=>{
-        CLOUD.pending=!!(meta&&meta.hasPendingWrites);
+        CLOUD.pending=!!(meta&&meta.hasPendingWrites);if(!CLOUD.pending)CLOUD.syncAt=Date.now();
         applyRemote(col,docs);cloudBadge();renderSoft();
       });
       render();
@@ -428,6 +435,8 @@ function cloudBadge(){
   else if(CLOUD.pending||!navigator.onLine){st="wait";t=navigator.onLine?"Eşitleniyor":"İnternet yok, sonra eşitlenecek"}
   else{st="ok";t="Bulutla eşitlendi"}
   b.dataset.st=st;b.setAttribute("aria-label",t);b.title=t;
+  const tx=$("cloudTxt");if(tx)tx.textContent=st==="ok"?"Bulutta":st==="wait"?(navigator.onLine?"Eşitleniyor":"Çevrimdışı"):st==="err"?"Sorun var":"Bulut kapalı";
+  if(st==="ok"&&!CLOUD.pending)CLOUD.syncAt=CLOUD.syncAt||Date.now();
 }
 window.addEventListener("online",()=>{cloudBadge();if(!CLOUD.api){CLOUD.on=false;cloudStart()}});window.addEventListener("offline",cloudBadge);
 
@@ -517,7 +526,8 @@ function openAccount(){
     q("#aR").onclick=async()=>{const e=q("#aE").value.trim();if(!e){q("#aErr").textContent="Önce e-posta adresini yaz.";return}try{await CLOUD.api.reset(e);q("#aErr").style.color="var(--ok)";q("#aErr").textContent="Şifre sıfırlama bağlantısı e-postana gönderildi."}catch(x){q("#aErr").textContent=cloudErr(x)}};
   });
 }
-const cloudLabel=()=>CLOUD.needVerify?"E-posta doğrulaması bekleniyor":CLOUD.denied?"Hesap onay bekliyor":CLOUD.err?"Eşitleme sorunu: "+CLOUD.err:!navigator.onLine?"İnternet yok · bağlantı gelince eşitlenecek":CLOUD.pending?"Eşitleniyor…":"Bulutla eşitlendi";
+const syncAgo=()=>{if(!CLOUD.syncAt)return"";const m=Math.round((Date.now()-CLOUD.syncAt)/60000);return m<1?"az önce":m<60?m+" dk önce":new Date(CLOUD.syncAt).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})};
+const cloudLabel=()=>CLOUD.needVerify?"E-posta doğrulaması bekleniyor":CLOUD.denied?"Hesap onay bekliyor":CLOUD.err?"Eşitleme sorunu: "+CLOUD.err:!navigator.onLine?"İnternet yok · bağlantı gelince eşitlenecek":CLOUD.pending?"Eşitleniyor…":"Bulutla eşitlendi"+(syncAgo()?" · "+syncAgo():"");
 const kById=id=>S.kiracilar.find(k=>k.id===id);
 const mById=id=>S.mulkler.find(m=>m.id===id);
 const isActive=k=>!k.cikis||k.cikis>todayISO();
@@ -792,7 +802,11 @@ function vYedek(){
   const n=S.kiracilar.length,son=S.ayar.sonYedek;
   const gun=son?daysBetween(parseISO(son),today()):null;
   let h="";
-  h+=`<div class="card list"><button class="item" id="yAcc"><span class="av ${CLOUD.ready?"ok":"warn"}">${ic(CLOUD.ready?"check":"alert",2)}</span><span class="main"><b>${CLOUD.ready?"Bulut yedeği açık":CLOUD.user?esc(cloudLabel()):"Bulut yedeği kapalı"}</b><small style="white-space:normal">${CLOUD.ready?`${esc(CLOUD.user.email||"")} · her kayıt anında buluta yazılıyor`:"Giriş yaparsan kayıtların otomatik olarak buluta yedeklenir"}</small></span>${ic("right")}</button></div>`;
+  const on=CLOUD.ready&&!CLOUD.err;
+  h+=`<button class="card" id="yAcc" style="text-align:left;width:100%;font:inherit;color:inherit;padding:18px;display:flex;flex-direction:column;gap:10px;border:0;background:${on?"var(--ok-soft)":"var(--warn-soft)"}">
+    <span style="display:flex;align-items:center;gap:10px"><span style="width:40px;height:40px;border-radius:99px;display:grid;place-items:center;background:${on?"var(--ok)":"var(--warn)"};color:#fff;flex-shrink:0">${ic(on?"check":"alert",2.4)}</span><b style="font-size:18px;color:${on?"var(--ok)":"var(--warn)"}">${on?"Buluta bağlı":CLOUD.user?"Bulut: "+esc(cloudLabel()):"Buluta bağlı değil"}</b></span>
+    <span style="font-size:14px">${on?`Hesap: <b>${esc(CLOUD.user.email||"")}</b><br>Her kayıt anında buluta yazılıyor. Son eşitleme: <b>${esc(syncAgo()||"az önce")}</b>`:CLOUD.user?"Dokun, ayrıntıları gör.":"Kayıtların şu an sadece bu telefonda. <b>Giriş yapmak için dokun</b>; telefon değişse de kaybolmasın."}</span>
+  </button>`;
   h+=`<section class="sec"><div class="sechd"><h2>Yedek dosyası</h2></div>
   <div class="card pad" style="display:flex;flex-direction:column;gap:12px">
   <p class="hint" style="margin:0">${son?`Son yedek: <b>${esc(fmtDate(son))}</b>${gun>30?` <span class="pill p-warn">${gun} gün önce</span>`:""}`:"Henüz yedek dosyası alınmadı."} ${n} kiracının tüm bilgileri tek dosyaya kaydedilir. Dosyayı WhatsApp'ta kendine ya da e-postana gönder.</p>
