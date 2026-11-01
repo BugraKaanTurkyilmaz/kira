@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.1.0";
+const VERSION="2.1.1";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -771,8 +771,11 @@ function vOzet(){
   if(sonra.length){
     const ymOfD=d=>ymOf(d.getFullYear(),d.getMonth());
     const groups=[];for(const x of sonra){const ym=ymOfD(x.r.tarih);let g=groups.find(g=>g.ym===ym);if(!g){g={ym,list:[]};groups.push(g)}g.list.push(x)}
-    h+=`<section class="sec"><div class="sechd"><h2>Sonraki zamlar · ${sonra.length}</h2></div>`;
+    if(ui.zM&&!groups.some(g=>g.ym===ui.zM))ui.zM="";
+    h+=`<section class="sec"><div class="sechd"><h2>Sonraki zamlar · ${sonra.length}</h2></div>
+    <div class="chips"><button class="chip ${!ui.zM?"on":""}" data-zm="">Tümü</button>${groups.map(g=>`<button class="chip ${ui.zM===g.ym?"on":""}" data-zm="${g.ym}">${esc(ymShort(g.ym))} <span class="num" style="opacity:.6">${g.list.length}</span></button>`).join("")}</div>`;
     for(const g of groups){
+      if(ui.zM&&ui.zM!==g.ym)continue;
       h+=`<div class="sechd" style="margin-top:4px"><h2 style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--fg)">${esc(ymLabel(g.ym))}</h2></div>
       <div class="card list">${g.list.map(({k,r})=>`<button class="item" data-open="${k.id}" style="padding:10px 14px"><span class="main"><b style="font-weight:500">${esc(k.ad)}</b></span><span class="side"><b style="font-weight:500">${r.tarih.getDate()} ${esc(AYK[r.tarih.getMonth()])}</b></span></button>`).join("")}</div>`;
     }
@@ -783,6 +786,7 @@ function vOzet(){
   $("bLimit").onclick=openTufe;
   $("eK")&&($("eK").onclick=()=>openKiraci());
   $("bAcc")&&($("bAcc").onclick=openAccount);
+  $("view").querySelectorAll("[data-zm]").forEach(b=>b.onclick=()=>{ui.zM=b.dataset.zm;const y=window.scrollY;render();window.scrollTo(0,y)});
   setFab("Kiracı",()=>openKiraci());
 }
 const fmtShort=d=>d.getDate()+" "+AYLAR[d.getMonth()];
