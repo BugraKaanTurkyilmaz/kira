@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.1.1";
+const VERSION="2.1.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -945,6 +945,14 @@ function openMulk(id,onCreated,focusField){
 
 /* ---------- kiracı detayı ---------- */
 let detailClose=null,detailId=null;
+/* ilk girişten bugüne (çıktıysa çıkışa) kadar geçen süre */
+function kiracilikSuresi(k){
+  const g=parseISO(k.giris),b=parseISO(k.cikis)||today();if(!g)return"";
+  let ay=(b.getFullYear()-g.getFullYear())*12+b.getMonth()-g.getMonth();if(b.getDate()<g.getDate())ay--;
+  if(ay<1)return"1 aydan az";
+  const y=Math.floor(ay/12),m=ay%12;
+  return[y?y+" yıl":"",m?m+" ay":""].filter(Boolean).join(" ");
+}
 function refreshDetail(id){if(detailClose&&detailId===id){detailClose();openDetail(id)}}
 function openDetail(id){
   const k=kById(id);if(!k)return;
@@ -960,6 +968,7 @@ function openDetail(id){
   <div class="sec"><div class="sechd"><h2>Bilgiler</h2></div><dl class="kv card pad">
     <dt>Telefon</dt><dd>${esc(k.tel||"—")}</dd>
     <dt>İlk giriş</dt><dd>${esc(fmtDate(k.giris))}</dd>
+    <dt>Kiracılık süresi</dt><dd>${esc(kiracilikSuresi(k))}</dd>
     ${k.sozBas&&k.sozBas!==k.giris?`<dt>Son sözleşme</dt><dd>${esc(fmtDate(k.sozBas))}</dd>`:""}
     <dt>Sözleşme</dt><dd>${+k.sure||1} yıl · zam ${k.zamPer==="sozlesme"?"sözleşme bitince":"her yıl"}</dd>
     ${k.cikis?`<dt>Çıkış</dt><dd>${esc(fmtDate(k.cikis))}</dd>`:""}
