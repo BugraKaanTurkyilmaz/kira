@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.9";
+const VERSION="2.0.10";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -594,8 +594,9 @@ async function fetchTufe(){
     if(!r.ok)return;
     const d=await r.json();
     if(d&&+d.tufe>0&&+d.tufe<200&&/^\d{4}-\d{2}$/.test(d.tufeAy||"")){
-      const prev=S.tufeOto;
-      S.tufeOto={tufe:+d.tufe,tufeAy:d.tufeAy,kaynak:String(d.kaynak||""),guncelleme:String(d.guncelleme||"")};
+      const prev=S.tufeOto,yeni={tufe:+d.tufe,tufeAy:d.tufeAy,kaynak:String(d.kaynak||""),guncelleme:String(d.guncelleme||"")};
+      if(JSON.stringify(prev)===JSON.stringify(yeni))return;
+      S.tufeOto=yeni;
       save();
       if(!prev||prev.tufeAy!==d.tufeAy||prev.tufe!==+d.tufe)render();
     }
@@ -1643,7 +1644,7 @@ function openPinSetup(){
 let hiddenAt=0;
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)hiddenAt=Date.now();
-  else{if(S.ayar.pinHash&&Date.now()-hiddenAt>3*60*1000)lockIfNeeded();if(Date.now()-hiddenAt>60*60*1000)fetchTufe();render();checkUpdate()}
+  else{if(S.ayar.pinHash&&Date.now()-hiddenAt>3*60*1000)lockIfNeeded();fetchTufe();render();checkUpdate()}
 });
 
 /* ---------- otomatik güncelleme ---------- */
@@ -1674,6 +1675,7 @@ $("cloudBtn").onclick=openAccount;
 render();
 lockIfNeeded();
 fetchTufe();
+setInterval(()=>{if(!document.hidden)fetchTufe()},5*60*1000);
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 if("serviceWorker" in navigator&&location.protocol!=="file:")navigator.serviceWorker.register("sw.js").then(r=>{swReg=r}).catch(()=>{});
 setTimeout(checkUpdate,1500);

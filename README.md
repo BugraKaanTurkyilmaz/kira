@@ -4,7 +4,7 @@ Telefona kurulabilen kira yönetim uygulaması: kiracılar, mülkler, tahsilat v
 
 - Veriler sadece kullanıcının telefonunda saklanır (sunucu yok). Ayarlar → Yedek al ile yedeklenir.
 - İnternet olmadan da çalışır.
-- `tufe.json` her ayın 3'ünde güncellenir; uygulama yasal kira artış sınırını buradan okur.
+- `tufe.json` GitHub Actions ile otomatik güncellenir: TÜİK'in açıkladığı ayın ilk günlerinde 15 dakikada bir, diğer günler günde bir kontrol edilir. Uygulama yasal kira artış sınırını buradan okur; açıkken 5 dakikada bir ve her öne gelişte yeniden bakar.
 
 ## Telefona kurma
 - **Android (Chrome):** Sayfayı aç → ⋮ menü → *Uygulamayı yükle* / *Ana ekrana ekle*

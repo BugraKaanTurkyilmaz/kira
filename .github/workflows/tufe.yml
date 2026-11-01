@@ -1,0 +1,36 @@
+name: TÜFE güncelle
+
+on:
+  schedule:
+    # TÜİK genelde ayın 3'ü (hafta sonuna denk gelirse 5'ine kadar) 10:00'da açıklar (07:00 UTC).
+    - cron: "*/15 6-12 1-8 * *"
+    # Takvim dışı açıklama ya da kaçan çalışma için günde bir kontrol.
+    - cron: "30 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: tufe
+  cancel-in-progress: false
+
+jobs:
+  guncelle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kaynakları oku
+        run: python3 .github/scripts/tufe_guncelle.py
+      - name: Değiştiyse yükle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet tufe.json && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "TÜFE güncellendi: $(python3 -c "import json;d=json.load(open('tufe.json'));print('%'+str(d['tufe']),d['tufeAy'])")"
+          git push
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent
