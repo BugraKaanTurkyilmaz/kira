@@ -242,7 +242,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.0.10";
+const VERSION="2.0.11";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -1153,13 +1153,11 @@ function lastRealRaise(k){
   const h=(k.gecmis||[]).filter(x=>x.tur!=="gecmis").slice().sort((a,b)=>b.tarih.localeCompare(a.tarih))[0];
   return h&&daysBetween(parseISO(h.tarih),today())<=60?h:null;
 }
-function zamMetni(k,eski,yeni,oran,tarih,L){
+function zamMetni(k,eski,yeni,tarih){
   const first=String(k.ad).split(" ")[0];
   const iban=S.ayar.iban?`\nIBAN: ${S.ayar.iban}${S.ayar.ad?" ("+S.ayar.ad+")":""}`:"";
   const sig=S.ayar.ad?`\n${S.ayar.ad}`:"";
-  const tufe=Math.abs(oran-L.tufe)<0.005;
-  const o=tufe?`yasal sınır olan 12 aylık TÜFE ortalaması (%${PCT.format(L.tufe)}) oranında`:`%${PCT.format(Math.round(oran*100)/100)}`;
-  return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${tarih?fmtDate(tarih):"yakında"} itibarıyla başlıyor. Aylık kira ${TL.format(eski)} tutarından ${o} artışla ${TL.format(yeni)} olacaktır.${iban}\nİyi günler.${sig}`;
+  return`Merhaba ${first}, kira sözleşmemizin yeni dönemi ${tarih?fmtDate(tarih):"yakında"} itibarıyla başlıyor. Aylık kira ${TL.format(eski)} tutarından ${TL.format(yeni)} tutarına çıkacaktır.${iban}\nİyi günler.${sig}`;
 }
 function openRaise(id){
   const k=kById(id);if(!k)return;const L=limitNow();
@@ -1191,7 +1189,7 @@ function openRaise(id){
         ov.querySelectorAll("#zQ [data-p]").forEach(b=>b.classList.toggle("hl",Math.abs(+b.dataset.p-o)<0.005));
         q("#zW").textContent=konut&&o>L.tufe+0.005?`Bu artış (%${PCT.format(o)}) yasal sınırın (%${PCT.format(L.tufe)}) üstünde. Kiracı kabul etmezse geçersiz sayılabilir.`:"";
       }
-      if(!edited)q("#mT").value=zamMetni(k,eski,y,o,t,L);
+      if(!edited)q("#mT").value=zamMetni(k,eski,y,t);
       upd();
     };
     if(!saved){
