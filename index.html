@@ -256,7 +256,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <body>
 <header class="hdr">
   <h1 id="title">Özet<small id="subtitle"></small></h1>
-  <button class="cloudpill" id="cloudBtn" hidden aria-label="Bulut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.6 1.5A3.75 3.75 0 0 1 17.5 18z"/></svg><span id="cloudTxt">Bulut</span></button>
+  <button class="cloudpill" id="cloudBtn" hidden aria-label="Hesap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 4-6.5 8-6.5s7.2 2.5 8 6.5"/></svg><span id="cloudTxt">Hesap</span></button>
   <button class="iconbtn" id="btnSettings" aria-label="Ayarlar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </header>
 <main id="view"></main>
@@ -268,7 +268,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.4.1";
+const VERSION="2.4.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -461,14 +461,14 @@ function cloudBadge(){
   if(!CLOUD.on&&!FIREBASE_CONFIG&&!window.__FB_FAKE){b.hidden=true;return}
   b.hidden=false;
   let st,t;
-  if(!CLOUD.user){st="off";t="Bulut kapalı: giriş yap"}
+  if(!CLOUD.user){st="off";t="Giriş yapılmadı: kayıtlar sadece bu telefonda"}
   else if(CLOUD.needVerify){st="wait";t="E-posta doğrulaması bekleniyor"}
   else if(CLOUD.denied){st="err";t="Hesap onay bekliyor"}
   else if(CLOUD.err){st="err";t="Eşitleme sorunu"}
-  else if(CLOUD.pending||!navigator.onLine){st="wait";t=navigator.onLine?"Eşitleniyor":"İnternet yok, sonra eşitlenecek"}
-  else{st="ok";t="Bulutla eşitlendi"}
+  else if(CLOUD.pending||!navigator.onLine){st="wait";t=navigator.onLine?"Kaydediliyor":"İnternet yok, bağlantı gelince kaydedilecek"}
+  else{st="ok";t="Giriş yapıldı: kayıtlar hesabına kaydediliyor"}
   b.dataset.st=st;b.setAttribute("aria-label",t);b.title=t;
-  const tx=$("cloudTxt");if(tx)tx.textContent=st==="ok"?"Bulutta":st==="wait"?(navigator.onLine?"Eşitleniyor":"Çevrimdışı"):st==="err"?"Sorun var":"Bulut kapalı";
+  const tx=$("cloudTxt");if(tx)tx.textContent=st==="ok"?"Giriş yapıldı":st==="wait"?(CLOUD.needVerify?"E-postanı doğrula":navigator.onLine?"Kaydediliyor":"İnternet yok"):st==="err"?(CLOUD.denied?"Onay bekliyor":"Sorun var"):"Giriş yap";
   if(st==="ok"&&!CLOUD.pending)CLOUD.syncAt=CLOUD.syncAt||Date.now();
 }
 window.addEventListener("online",()=>{cloudBadge();if(!CLOUD.api){CLOUD.on=false;cloudStart()}});window.addEventListener("offline",cloudBadge);
