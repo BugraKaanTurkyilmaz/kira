@@ -268,7 +268,7 @@ tfoot td{font-weight:700;border-bottom:0}
 <script>
 "use strict";
 /* ================== sabitler ================== */
-const VERSION="2.3.1";
+const VERSION="2.3.2";
 const KEY="kira-defteri-v1";
 const AYLAR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
 const AYK=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
@@ -846,10 +846,10 @@ function zTable(zr,L){
     const durum=r.gun<0?`<span class="pill p-bad">${-r.gun} gün gecikti</span>`:r.gun===0?`<span class="pill p-bad">Bugün</span>`:r.gun<=30?`<span class="pill p-warn">${r.gun} gün kaldı</span>`:`<span style="color:var(--muted)">${r.gun} gün</span>`;
     const btn=r.gun<=30?`<button class="btn sm pri" data-raise="${k.id}" style="min-height:28px;padding:3px 12px">Zam</button>`:"";
     const son=r.last?`${esc(fmtShortDate(r.last.tarih))}${r.last.oran!=null&&r.last.oran!==""?" · %"+PCT.format(+r.last.oran):""}`:"—";
-    return`<tr data-open="${k.id}" tabindex="0" data-z="${z}" style="--h:${AY_TON[z]}"><td class="rn">${AYK[z]}</td><td class="ad" style="max-width:140px">${esc(k.ad)}</td><td><div>${esc(fmtShortDate(toISO(r.tarih)))}</div><div style="display:flex;gap:6px;align-items:center;margin-top:3px">${durum}${btn}</div></td><td class="r">${TL.format(eski)}</td><td class="r">+${TL.format(yeni-eski)}</td><td>${son}</td><td class="ad2">${esc(kAdres(k)||"—")}</td></tr>`}).join("");
-  h+=`<div class="xt-wrap"><table class="xt"><thead><tr><th class="rn">Ay</th><th>Ad Soyad</th><th>Zam tarihi</th><th class="r">Şu anki kira</th><th class="r">Fark</th><th>Son zam</th><th>Adres / Daire</th></tr></thead><tbody>${rows}</tbody>
-  <tfoot><tr><td class="rn"></td><td>${list.length} kiracı</td><td></td><td class="r">${TL.format(tEski)}</td><td class="r">+${TL.format(tYeni-tEski)}</td><td></td><td></td></tr></tfoot></table></div>`;
-  h+=`<p style="margin:0;font-size:12.5px;color:var(--muted)">Aynı renkteki satırların zammı aynı ayda. Zammı 30 gün içinde olanlarda "Zam" düğmesi çıkar. Fark, yasal sınır %${PCT.format(L.tufe)} ile en fazla yapılabilecek artıştır.</p>`;
+    return`<tr data-open="${k.id}" tabindex="0" data-z="${z}" style="--h:${AY_TON[z]}"><td class="rn">${AYK[z]}</td><td class="ad" style="max-width:140px">${esc(k.ad)}</td><td><div>${esc(fmtShortDate(toISO(r.tarih)))}</div><div style="display:flex;gap:6px;align-items:center;margin-top:3px">${durum}${btn}</div></td><td class="r">${TL.format(eski)}</td><td>${son}</td><td class="ad2">${esc(kAdres(k)||"—")}</td></tr>`}).join("");
+  h+=`<div class="xt-wrap"><table class="xt"><thead><tr><th class="rn">Ay</th><th>Ad Soyad</th><th>Zam tarihi</th><th class="r">Şu anki kira</th><th>Son zam</th><th>Adres / Daire</th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td class="rn"></td><td>${list.length} kiracı</td><td></td><td class="r">${TL.format(tEski)}</td><td></td><td></td></tr></tfoot></table></div>`;
+  h+=`<p style="margin:0;font-size:12.5px;color:var(--muted)">Aynı renkteki satırların zammı aynı ayda. Zammı 30 gün içinde olanlarda "Zam" düğmesi çıkar.</p>`;
   return h;
 }
 
